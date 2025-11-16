@@ -1,0 +1,25 @@
+# VS Code settings (per-user)
+.vscode/
+
+# Build folders
+build*/
+build/
+out/
+Debug/
+Release/
+
+# Object and generated files
+*.o
+*.obj
+*.d
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.log
+
+# Misc
+*.swp
+*.tmp
+*.bak
