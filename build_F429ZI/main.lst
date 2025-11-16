@@ -1,0 +1,158 @@
+ARM GAS  C:\Users\user\AppData\Local\Temp\cc1iNTLZ.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"main.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/main.c"
+  20              		.section	.text.main,"ax",%progbits
+  21              		.align	1
+  22              		.global	main
+  23              		.syntax unified
+  24              		.thumb
+  25              		.thumb_func
+  27              	main:
+  28              	.LFB134:
+   1:Core/Src/main.c **** #include <stdint.h>
+   2:Core/Src/main.c **** #include "init.h"
+   3:Core/Src/main.c **** #include "Interrupt.h"
+   4:Core/Src/main.c **** #include "clock.h"
+   5:Core/Src/main.c **** #include "motor.h"
+   6:Core/Src/main.c **** 
+   7:Core/Src/main.c **** // Могу ошибаться, но это курсовая
+   8:Core/Src/main.c **** //comment
+   9:Core/Src/main.c **** static void delay_ms(volatile uint32_t ms)
+  10:Core/Src/main.c **** {
+  11:Core/Src/main.c ****     for (volatile uint32_t i = 0; i < ms * 10000U; i++)
+  12:Core/Src/main.c ****     {
+  13:Core/Src/main.c ****         __NOP();
+  14:Core/Src/main.c ****     }
+  15:Core/Src/main.c **** }
+  16:Core/Src/main.c **** 
+  17:Core/Src/main.c **** 
+  18:Core/Src/main.c **** static inline void PB7_On(void)
+  19:Core/Src/main.c **** {
+  20:Core/Src/main.c ****     // Установить PB7 в 1: пишем в нижние 16 бит BSRR
+  21:Core/Src/main.c ****     GPIOB->BSRR = (1U << 7);
+  22:Core/Src/main.c **** }
+  23:Core/Src/main.c **** 
+  24:Core/Src/main.c **** static inline void PB7_Off(void)
+  25:Core/Src/main.c **** {
+  26:Core/Src/main.c ****     // Сброс PB7: пишем в старшие 16 бит (7 + 16)
+  27:Core/Src/main.c ****     GPIOB->BSRR = (1U << (7 + 16));
+  28:Core/Src/main.c **** }
+  29:Core/Src/main.c **** 
+  30:Core/Src/main.c **** static inline void PB7_Toggle(void)
+ARM GAS  C:\Users\user\AppData\Local\Temp\cc1iNTLZ.s 			page 2
+
+
+  31:Core/Src/main.c **** {
+  32:Core/Src/main.c ****     // Самый простой вариант: XOR по ODR
+  33:Core/Src/main.c ****     GPIOB->ODR ^= (1U << 7);
+  34:Core/Src/main.c **** }
+  35:Core/Src/main.c **** 
+  36:Core/Src/main.c **** // Привет всем из первой лабораторной работы!
+  37:Core/Src/main.c **** int main(void)
+  38:Core/Src/main.c **** {
+  29              		.loc 1 38 1 view -0
+  30              		.cfi_startproc
+  31              		@ Volatile: function does not return.
+  32              		@ args = 0, pretend = 0, frame = 0
+  33              		@ frame_needed = 0, uses_anonymous_args = 0
+  34 0000 08B5     		push	{r3, lr}
+  35              	.LCFI0:
+  36              		.cfi_def_cfa_offset 8
+  37              		.cfi_offset 3, -8
+  38              		.cfi_offset 14, -4
+  39:Core/Src/main.c **** 
+  40:Core/Src/main.c ****     PB7_Init();   // PB7 как вывод
+  39              		.loc 1 40 5 view .LVU1
+  40 0002 FFF7FEFF 		bl	PB7_Init
+  41              	.LVL0:
+  41:Core/Src/main.c ****     Clock_Init(); // 168 МГц, PCLK1=42М, PCLK2=84М, TIM1=168МГц
+  42              		.loc 1 41 5 view .LVU2
+  43 0006 FFF7FEFF 		bl	Clock_Init
+  44              	.LVL1:
+  42:Core/Src/main.c ****     PB7_Init();   // PB7 как вывод
+  45              		.loc 1 42 5 view .LVU3
+  46 000a FFF7FEFF 		bl	PB7_Init
+  47              	.LVL2:
+  43:Core/Src/main.c ****     Motor_Init(); // TIM1 + GPIO для моторов
+  48              		.loc 1 43 5 view .LVU4
+  49 000e FFF7FEFF 		bl	Motor_Init
+  50              	.LVL3:
+  44:Core/Src/main.c ****     // GPIO_INIT();
+  45:Core/Src/main.c ****     //  UART3_Init();
+  46:Core/Src/main.c **** 
+  47:Core/Src/main.c ****     // UART3_SendString("Hello from NUCLEO-F429ZI @ 115200 8N1!\r\n");
+  48:Core/Src/main.c ****     // UART3_SendString("Type something, I will echo it.\r\n");
+  49:Core/Src/main.c **** 
+  50:Core/Src/main.c ****     // Жёстко задаём направление вперёд
+  51:Core/Src/main.c ****     Motor_SetSpeed(MOTOR_A, -MOTOR_PWM_MAX); // полный вперёд
+  51              		.loc 1 51 5 view .LVU5
+  52 0012 6FF06201 		mvn	r1, #98
+  53 0016 0020     		movs	r0, #0
+  54 0018 FFF7FEFF 		bl	Motor_SetSpeed
+  55              	.LVL4:
+  52:Core/Src/main.c ****     Motor_SetSpeed(MOTOR_B, -MOTOR_PWM_MAX);
+  56              		.loc 1 52 5 view .LVU6
+  57 001c 6FF06201 		mvn	r1, #98
+  58 0020 0120     		movs	r0, #1
+  59 0022 FFF7FEFF 		bl	Motor_SetSpeed
+  60              	.LVL5:
+  61              	.L2:
+  53:Core/Src/main.c **** 
+  54:Core/Src/main.c ****     while (1)
+ARM GAS  C:\Users\user\AppData\Local\Temp\cc1iNTLZ.s 			page 3
+
+
+  62              		.loc 1 54 5 view .LVU7
+  55:Core/Src/main.c ****     {
+  56:Core/Src/main.c ****         __NOP();
+  63              		.loc 1 56 9 discriminator 1 view .LVU8
+  64              		.syntax unified
+  65              	@ 56 "Core/Src/main.c" 1
+  66 0026 00BF     		nop
+  67              	@ 0 "" 2
+  54:Core/Src/main.c ****     {
+  68              		.loc 1 54 11 view .LVU9
+  69              		.thumb
+  70              		.syntax unified
+  71 0028 FDE7     		b	.L2
+  72              		.cfi_endproc
+  73              	.LFE134:
+  75              		.text
+  76              	.Letext0:
+  77              		.file 2 "C:/Users/user/Desktop/Tools/xpack-arm-none-eabi-gcc-13.2.1-1.1/arm-none-eabi/include/mach
+  78              		.file 3 "C:/Users/user/Desktop/Tools/xpack-arm-none-eabi-gcc-13.2.1-1.1/arm-none-eabi/include/sys/
+  79              		.file 4 "Core/Inc/motor.h"
+  80              		.file 5 "Core/Inc/clock.h"
+  81              		.file 6 "Core/Inc/init.h"
+ARM GAS  C:\Users\user\AppData\Local\Temp\cc1iNTLZ.s 			page 4
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 main.c
+C:\Users\user\AppData\Local\Temp\cc1iNTLZ.s:21     .text.main:00000000 $t
+C:\Users\user\AppData\Local\Temp\cc1iNTLZ.s:27     .text.main:00000000 main
+
+UNDEFINED SYMBOLS
+PB7_Init
+Clock_Init
+Motor_Init
+Motor_SetSpeed
