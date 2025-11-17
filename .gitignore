@@ -1,25 +1,25 @@
-# VS Code settings (per-user)
-.vscode/
+# Ignore EVERYTHING
+*
 
-# Build folders
-build*/
-build/
-out/
-Debug/
-Release/
+# Allow .gitignore itself
+!.gitignore
 
-# Object and generated files
-*.o
-*.obj
-*.d
-*.elf
-*.bin
-*.hex
-*.map
-*.lst
-*.log
+# Allow the Core folder
+!Core/
+!Core/**
 
-# Misc
-*.swp
-*.tmp
-*.bak
+# But still ignore everything inside Core by default
+Core/*
+
+# Allow ONLY Inc/ and Src/ inside Core
+!Core/Inc/
+!Core/Src/
+
+# Allow only .c and .h files inside Inc/ and Src/
+Core/Inc/*    # ignore all
+Core/Src/*    # ignore all
+
+!Core/Inc/*.h
+!Core/Src/*.c
+!Core/Src/*.h
+!Core/Inc/*.c

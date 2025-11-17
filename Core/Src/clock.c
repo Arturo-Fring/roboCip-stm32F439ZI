@@ -56,3 +56,30 @@ void Clock_Init(void)
     /* 9. Обновляем глобальную переменную SystemCoreClock */
     SystemCoreClock = 168000000U;
 }
+
+void MCO_init(void)
+{
+
+    // Для PC9
+    SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOCEN);
+    /* MODER: сначала очищаем, потом ставим 10b (AF) */
+    CLEAR_BIT(GPIOC->MODER, GPIO_MODER_MODE9_Msk);
+    SET_BIT(GPIOC->MODER, GPIO_MODER_MODE9_1); // бит MODE9_1 = 1, MODE9_0 = 0 → 10b
+
+    CLEAR_BIT(GPIOC->OTYPER, GPIO_OTYPER_OT9_Msk);
+    /* OSPEEDR: 11b = very high speed */
+    CLEAR_BIT(GPIOC->OSPEEDR, GPIO_OSPEEDR_OSPEED9_Msk);
+    SET_BIT(GPIOC->OSPEEDR, GPIO_OSPEEDR_OSPEED9_Msk);
+    CLEAR_BIT(GPIOC->PUPDR, GPIO_PUPDR_PUPD9_Msk);
+
+    CLEAR_BIT(GPIOC->AFR[1], 0xFU << ((9U - 8U) * 4U)); // (9-8)*4 = 4, поле для PC9
+    /* Сначала очищаем поля MCO2 и MCO2PRE */ //там 0000
+
+    CLEAR_BIT(RCC->CFGR, RCC_CFGR_MCO2 | RCC_CFGR_MCO2PRE);
+    /* Источник MCO2 = PLLCLK (MCO2 = 11b) */
+    SET_BIT(RCC->CFGR, RCC_CFGR_MCO2_0 | RCC_CFGR_MCO2_1);
+    /* Предделитель MCO2PRE = /5 → 111b: ставлю все три бита */
+    SET_BIT(RCC->CFGR, RCC_CFGR_MCO2PRE_0 |
+                           RCC_CFGR_MCO2PRE_1 |
+                           RCC_CFGR_MCO2PRE_2);
+}
