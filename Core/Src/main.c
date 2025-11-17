@@ -1,56 +1,43 @@
 #include "GU521_init.h"
 #include "clock.h"
 #include <string.h>
-
-void USART2_SendChar(uint8_t ch)
-{
-    while (!(USART2->SR & USART_SR_TXE)); // Ждем готовности передатчика
-    USART2->DR = ch;
-}
-
-void USART2_SendString(const char *str)
-{
-    while (*str) {
-        USART2_SendChar(*str++);
-    }
-}
-
-// Функция для проверки приема
-uint8_t USART2_ReceiveChar(void)
-{
-    while (!(USART2->SR & USART_SR_RXNE)); // Ждем приема данных
-    return USART2->DR;
-}
+#include "motor.h"
+#include "usart.h"
+#include "init.h"
 
 int main(void)
 {
+    /*  =============== ИНИЦИАЛИЗАЦИЯ =================== */
     Clock_Init();
+    SysTick_Init_1ms();
     Gyro_init();
-    
-    // Даем время на инициализацию
-    for(volatile int i = 0; i < 1000000; i++);
-    
-    // Отправляем тестовое сообщение
-    USART2_SendString("\r\n=== USART2 Test Started ===\r\n");
-    USART2_SendString("STM32 is ready!\r\n");
-    USART2_SendString("Type something...\r\n");
-    
+    Motor_Init(); // настраивает TIM1, GPIO и т.д.
+    USART3_Init(115200);
+    USART_Println("=== Robot debug UART ready ===");
+    /*  ============================================ */
+
+    /*  ===============  ПЕРЕМЕННЫЕ =================== */
+    int32_t speedL = 0;
+    int32_t speedR = 0;
+    float yaw = 0.0f;
     char counter = 0;
-    
-    while(1) {
-        // Простой эхо-тест
-        if (USART2->SR & USART_SR_RXNE) {
-            uint8_t received = USART2_ReceiveChar();
-            USART2_SendString("Echo: ");
-            USART2_SendChar(received);
-            USART2_SendString("\r\n");
+    /*  ============================================ */
+
+    while (1)
+    {
+        static uint32_t lastPrint = 0;
+        uint32_t now = g_msTicks;
+
+        if ((now - lastPrint) >= 1000)
+        { // раз в 100 мс
+            lastPrint = now;
+
+            USART_Print("SpeedL=");
+            USART_PrintInt(speedL);
+            USART_Print(" SpeedR=");
+            USART_PrintInt(speedR);
+            USART_Print(" Yaw=");
+            USART_PrintlnFloat(yaw, 2);
         }
-        
-        // Периодическая отправка сообщения
-        for(volatile int i = 0; i < 1000000; i++);
-        counter++;
-        USART2_SendString("Counter: ");
-        USART2_SendChar('0' + (counter % 10));
-        USART2_SendString("\r\n");
     }
 }
