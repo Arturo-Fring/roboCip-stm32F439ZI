@@ -19,40 +19,24 @@ void Gyro_init(void)
     CLEAR_BIT(GPIOB->OTYPER, GPIO_OTYPER_OT5_Msk); // Пуш-пул 
 
     // Настройка USART2
+    // USART2 настройка
+    SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOAEN_Msk | RCC_AHB1ENR_GPIODEN_Msk);
 
-    SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOAEN_Msk | RCC_AHB1ENR_GPIODEN_Msk); // тактирование портов A и D
+    // MODER - альтернативная функция
+    MODIFY_REG(GPIOA->MODER, GPIO_MODER_MODER3_Msk, 2 << GPIO_MODER_MODER3_Pos);
+    MODIFY_REG(GPIOD->MODER, GPIO_MODER_MODER5_Msk, 2 << GPIO_MODER_MODER5_Pos);
 
-    SET_BIT(GPIOD->MODER, GPIO_MODER_MODE5_1);
-    SET_BIT(GPIOA->MODER, GPIO_MODER_MODE3_1);
+    // AFR - AF7 
+    MODIFY_REG(GPIOA->AFR[0], 0xF << 12, 7 << 12);  // PA3: биты 12-15
+    MODIFY_REG(GPIOD->AFR[0], 0xF << 20, 7 << 20);  // PD5: биты 20-
 
-    CLEAR_BIT(GPIOD->AFR[0], GPIO_AFRL_AFRL5_0 | GPIO_AFRL_AFRL5_1 | GPIO_AFRL_AFRL5_2 | GPIO_AFRL_AFRL5_3 );
-    CLEAR_BIT(GPIOA->AFR[0], GPIO_AFRL_AFRL3_0 | GPIO_AFRL_AFRL3_1 | GPIO_AFRL_AFRL3_2 | GPIO_AFRL_AFRL3_3 );
-
-    SET_BIT(GPIOA->AFR[0], GPIO_AFRL_AFRL3_2 | GPIO_AFRL_AFRL3_1 | GPIO_AFRL_AFRL3_0); // Настроили на RX
-    SET_BIT(GPIOD->AFR[0], GPIO_AFRL_AFRL5_2 | GPIO_AFRL_AFRL5_1 | GPIO_AFRL_AFRL5_0); // Настроили на TX
-
-    MODIFY_REG(GPIOA->OSPEEDR, GPIO_OSPEEDR_OSPEED3_Msk, 0x1);
-    MODIFY_REG(GPIOD->OSPEEDR, GPIO_OSPEEDR_OSPEED5_Msk, 0x1);
-
-    CLEAR_BIT(GPIOA->OTYPER, GPIO_OTYPER_OT3_Msk);
-    CLEAR_BIT(GPIOD->OTYPER, GPIO_OTYPER_OT5_Msk);
-
-    CLEAR_BIT(GPIOA->PUPDR, GPIO_PUPDR_PUPD3_Msk);
-    CLEAR_BIT(GPIOD->PUPDR, GPIO_PUPDR_PUPD5_Msk);
-
-    /**/
-
-    //BRR = 42000000/115200; = 0x16C // Скорость передачи сигнала МГц/бод
-
-    SET_BIT(RCC->APB1ENR, RCC_APB1ENR_USART2EN_Msk); // Подали тактирование на шину APB1
+    // USART
+    SET_BIT(RCC->APB1ENR, RCC_APB1ENR_USART2EN_Msk);
     CLEAR_BIT(USART2->CR1, USART_CR1_UE_Msk);
-    WRITE_REG(USART2->BRR, 0x16C);
-    USART2->CR1 = USART_CR1_TE_Msk | USART_CR1_RE_Msk | 0; // Запустили RX/TX. Остальные биты без изменений
-
-    CLEAR_REG(USART2->CR2);
-    CLEAR_REG(USART2->CR3);
-
-    SET_BIT(USART2->CR1, USART_CR1_UE);
+    WRITE_REG(USART2->BRR, 0x16D);
+    WRITE_REG(USART2->CR2, 0);
+    WRITE_REG(USART2->CR3, 0);
+    SET_BIT(USART2->CR1, USART_CR1_TE_Msk | USART_CR1_RE_Msk | USART_CR1_UE_Msk);
 
     // Настройка I2C2
 
@@ -73,4 +57,32 @@ void Gyro_init(void)
     SET_BIT(I2C2->CR1, I2C_CR1_PE_Msk); // Включили шину I2C2 на частоте 42МГц
 
     //
+}
+
+void Test_USART_Menu(void)
+{
+    USART2_SendString("\r\n=== USART Test Menu ===\r\n");
+    USART2_SendString("1. Send test string\r\n");
+    USART2_SendString("2. Echo test\r\n");
+    USART2_SendString("3. Check communication\r\n");
+    USART2_SendString("Select option (1-3): ");
+}
+
+void USART2_Init(void)
+{
+    // Отключение USART перед настройкой
+    USART2->CR1 &= ~USART_CR1_UE;
+    
+    // Настройка скорости (Baud Rate)
+    // Для F_APB1 = 36MHz, Baud = 115200
+    USART2->BRR = (39 << 4) | (1 << 0); // 39.0625 = 36000000/115200
+    
+    // Настройка контроля:
+    // 8 бит данных, 1 стоп-бит, без контроля четности
+    USART2->CR1 = USART_CR1_TE | USART_CR1_RE; // Включение TX и RX
+    USART2->CR2 = 0;                           // 1 стоп-бит
+    USART2->CR3 = 0;                           // Без аппаратного контроля
+    
+    // Включение USART
+    USART2->CR1 |= USART_CR1_UE;
 }

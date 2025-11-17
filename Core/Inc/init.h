@@ -6,7 +6,6 @@ void GPIO_INIT(void);
 
 // LB 2
 
-void RCC_INIT(void);
 void ITR_Init(void);
 
 // UART

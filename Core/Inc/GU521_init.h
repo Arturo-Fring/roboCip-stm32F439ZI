@@ -7,5 +7,6 @@
 //
 
 void Gyro_init(void);
+void Test_USART_Menu(void);
 
 #endif

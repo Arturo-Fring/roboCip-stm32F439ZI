@@ -1,6 +1,6 @@
 #ifndef CLOCK_H
 #define CLOCK_H
-/*
+/* 
  * Инициализация системы тактирования:
  *  - HSI -> PLL -> SYSCLK = 168 МГц
  *  - AHB  = 168 МГц
@@ -14,6 +14,5 @@
 #include "stm32f4xx.h"
 
 void Clock_Init(void);
-void MCO_init(void);
 
 #endif

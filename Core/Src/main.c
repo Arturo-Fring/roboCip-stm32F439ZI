@@ -1,58 +1,56 @@
-#include <stdint.h>
-#include "init.h"
-#include "Interrupt.h"
+#include "GU521_init.h"
 #include "clock.h"
-#include "motor.h"
+#include <string.h>
 
-// Могу ошибаться, но это курсовая
-//comment
-static void delay_ms(volatile uint32_t ms)
+void USART2_SendChar(uint8_t ch)
 {
-    for (volatile uint32_t i = 0; i < ms * 10000U; i++)
-    {
-        __NOP();
+    while (!(USART2->SR & USART_SR_TXE)); // Ждем готовности передатчика
+    USART2->DR = ch;
+}
+
+void USART2_SendString(const char *str)
+{
+    while (*str) {
+        USART2_SendChar(*str++);
     }
 }
 
-
-static inline void PB7_On(void)
+// Функция для проверки приема
+uint8_t USART2_ReceiveChar(void)
 {
-    // Установить PB7 в 1: пишем в нижние 16 бит BSRR
-    GPIOB->BSRR = (1U << 7);
+    while (!(USART2->SR & USART_SR_RXNE)); // Ждем приема данных
+    return USART2->DR;
 }
 
-static inline void PB7_Off(void)
-{
-    // Сброс PB7: пишем в старшие 16 бит (7 + 16)
-    GPIOB->BSRR = (1U << (7 + 16));
-}
-
-static inline void PB7_Toggle(void)
-{
-    // Самый простой вариант: XOR по ODR
-    GPIOB->ODR ^= (1U << 7);
-}
-
-// Привет всем из первой лабораторной работы!
 int main(void)
 {
-
-    PB7_Init();   // PB7 как вывод
-    Clock_Init(); // 168 МГц, PCLK1=42М, PCLK2=84М, TIM1=168МГц
-    PB7_Init();   // PB7 как вывод
-    Motor_Init(); // TIM1 + GPIO для моторов
-    // GPIO_INIT();
-    //  UART3_Init();
-
-    // UART3_SendString("Hello from NUCLEO-F429ZI @ 115200 8N1!\r\n");
-    // UART3_SendString("Type something, I will echo it.\r\n");
-
-    // Жёстко задаём направление вперёд
-    Motor_SetSpeed(MOTOR_A, -MOTOR_PWM_MAX); // полный вперёд
-    Motor_SetSpeed(MOTOR_B, -MOTOR_PWM_MAX);
-
-    while (1)
-    {
-        __NOP();
+    Clock_Init();
+    Gyro_init();
+    
+    // Даем время на инициализацию
+    for(volatile int i = 0; i < 1000000; i++);
+    
+    // Отправляем тестовое сообщение
+    USART2_SendString("\r\n=== USART2 Test Started ===\r\n");
+    USART2_SendString("STM32 is ready!\r\n");
+    USART2_SendString("Type something...\r\n");
+    
+    char counter = 0;
+    
+    while(1) {
+        // Простой эхо-тест
+        if (USART2->SR & USART_SR_RXNE) {
+            uint8_t received = USART2_ReceiveChar();
+            USART2_SendString("Echo: ");
+            USART2_SendChar(received);
+            USART2_SendString("\r\n");
+        }
+        
+        // Периодическая отправка сообщения
+        for(volatile int i = 0; i < 1000000; i++);
+        counter++;
+        USART2_SendString("Counter: ");
+        USART2_SendChar('0' + (counter % 10));
+        USART2_SendString("\r\n");
     }
 }
