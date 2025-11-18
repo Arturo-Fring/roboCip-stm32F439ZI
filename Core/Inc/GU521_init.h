@@ -1,11 +1,17 @@
 #ifndef GU521_INIT_H
 #define GU521_INIT_H
-#include <stdint.h>
-#include "../../CMSIS/Devices/STM32F4xx/Inc/STM32F429ZI/stm32f429xx.h"
+
 #include "stm32f4xx.h"
+#include <stdint.h>
 
-//
+/*
+ * Инициализация I2C1 и GPIO под модуль GY-521 (MPU6050).
+ * Используем:
+ *   PB9 → I2C1_SDA (AF4)
+ *   PB8 → I2C1_SCL (AF4)
+ * Это Arduino A4/A5 на Nucleo-F429ZI.
+ */
 
-void Gyro_init(void);
+void GY521_I2C1_Init(void);
 
-#endif
+#endif // GU521_INIT_H

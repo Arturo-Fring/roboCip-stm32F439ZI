@@ -132,9 +132,43 @@ uint8_t USART_IsDataReceived(void)
 }
 
 char USART_ReadChar(void)
+
 {
     while ((USART2->SR & USART_SR_RXNE) == 0)
     {
     }
     return (char)(USART2->DR & 0xFFU);
+}
+
+///////  ДЛЯ FLOAT ЧИСЕЛ
+void USART_PrintFloatSimple(float value, uint8_t digits)
+{
+    if (digits > 6)
+        digits = 6; // ограничим, чтобы не расходиться
+
+    // Знак
+    if (value < 0.0f)
+    {
+        USART_WriteChar('-');
+        value = -value;
+    }
+
+    // Целая часть
+    int32_t intPart = (int32_t)value;
+    USART_PrintInt(intPart);
+
+    USART_WriteChar('.');
+
+    // Дробная часть
+    float frac = value - (float)intPart;
+
+    for (uint8_t i = 0; i < digits; i++)
+    {
+        frac *= 10.0f;
+        int32_t digit = (int32_t)frac;
+        if (digit > 9)
+            digit = 9; // на всякий случай
+        USART_WriteChar('0' + digit);
+        frac -= (float)digit;
+    }
 }

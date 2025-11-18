@@ -1,44 +1,67 @@
 #include "GU521_init.h"
 #include "usart.h"
 
-void Gyro_init(void)
+void GY521_I2C1_Init(void)
 {
-    SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOFEN_Msk | RCC_AHB1ENR_GPIOBEN_Msk); // Включили тактирования порта F, шины APB1 для I2C2, и порта B
-    SET_BIT(RCC->APB1ENR, RCC_APB1ENR_I2C2EN_Msk);
+    /* 1. Тактирование GPIOB и I2C1 */
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
+    RCC->APB1ENR |= RCC_APB1ENR_I2C1EN;
+    
+    /* 2. PB8 (SCL), PB9 (SDA) → AF4, open-drain, pull-up */
 
-    CLEAR_REG(GPIOF->AFR[0]);
-    SET_BIT(GPIOF->AFR[0], GPIO_AFRL_AFRL0_2 | GPIO_AFRL_AFRL1_2); //
+    // MODER: AF
+    GPIOB->MODER &= ~(GPIO_MODER_MODE8_Msk | GPIO_MODER_MODE9_Msk);
+    GPIOB->MODER |= (GPIO_MODER_MODE8_1 | GPIO_MODER_MODE9_1); // 10: AF
 
-    SET_BIT(GPIOF->MODER, GPIO_MODER_MODE0_1 | GPIO_MODER_MODE1_1);               // Настроили пины PF0 (SDA) и PF1 (SCL) на альтернативный режим
-    SET_BIT(GPIOF->OTYPER, GPIO_OTYPER_OT0 | GPIO_OTYPER_OT1);                    // Режим open-drain для PF0 и PF1
-    SET_BIT(GPIOF->OSPEEDR, GPIO_OSPEEDR_OSPEED0_Msk | GPIO_OSPEEDR_OSPEED1_Msk); // Настроили работу выводов PF0 и PF1 на быстрый
-    CLEAR_REG(GPIOF->PUPDR); // Все без пулап или пулдаун
-    SET_BIT(GPIOF->PUPDR, GPIO_PUPDR_PUPD0_0 | GPIO_PUPDR_PUPD1_0);
+    // OTYPER: open-drain
+    GPIOB->OTYPER |= GPIO_OTYPER_OT8 | GPIO_OTYPER_OT9;
 
-    CLEAR_BIT(GPIOB->MODER, GPIO_MODER_MODE5_Msk);       // Пин PB5 на вход. Отвечает в гироскопе за INT
-    CLEAR_BIT(GPIOB->PUPDR, GPIO_PUPDR_PUPD5_Msk);       // Пин PB5 без пулап и пулдаун
-    CLEAR_BIT(GPIOB->OSPEEDR, GPIO_OSPEEDR_OSPEED5_Msk); // Входу не нужна высокая скорость
-    CLEAR_BIT(GPIOB->OTYPER, GPIO_OTYPER_OT5_Msk);       // Пуш-пул
+    // OSPEEDR: high
+    GPIOB->OSPEEDR |= GPIO_OSPEEDR_OSPEED8_Msk | GPIO_OSPEEDR_OSPEED9_Msk;
 
-    // дальше — работа с I2C и конфигурация гироскопа
-    // Настройка I2C2
+    // PUPDR: pull-up
+    GPIOB->PUPDR &= ~(GPIO_PUPDR_PUPD8_Msk | GPIO_PUPDR_PUPD9_Msk);
+    GPIOB->PUPDR |= (GPIO_PUPDR_PUPD8_0 | GPIO_PUPDR_PUPD9_0);
 
-    SET_BIT(I2C2->CR1, I2C_CR1_SWRST); // SWRST = 1
+    // AF4
+    GPIOB->AFR[1] &= ~(GPIO_AFRH_AFSEL8_Msk | GPIO_AFRH_AFSEL9_Msk);
+    GPIOB->AFR[1] |= (4U << GPIO_AFRH_AFSEL8_Pos) |
+                     (4U << GPIO_AFRH_AFSEL9_Pos);
 
-    CLEAR_BIT(I2C2->CR1, I2C_CR1_SWRST); // SWRST = 0
+    /* 3. Полный сброс и конфиг I2C1 */
 
-    MODIFY_REG(I2C2->CR2, I2C_CR2_FREQ_Msk, 42 << I2C_CR2_FREQ_Pos); // Настроили частоту на 42 МГц
+    // Сначала полностью выключим
+    I2C1->CR1 = 0;
+    I2C1->CR2 = 0;
+    I2C1->OAR1 = 0;
+    I2C1->OAR2 = 0;
+    I2C1->CCR = 0;
+    I2C1->TRISE = 0;
 
+    // Частота APB1 = 42 МГц
+    I2C1->CR2 = 42U;
+
+    // Standard Mode 100 кГц
     uint32_t i2c_freq = 42000000UL;
-    uint32_t i2c_speed = 400000UL;
-    uint32_t ccr_value = (i2c_freq / (3 * i2c_speed)); // 35 
+    uint32_t i2c_speed = 100000UL;
+    uint32_t ccr_value = i2c_freq / (2U * i2c_speed);
+    if (ccr_value < 4U)
+        ccr_value = 4U;
+    if (ccr_value > 0xFFFU)
+        ccr_value = 0xFFFU;
 
-    MODIFY_REG(I2C2->CCR, I2C_CCR_CCR_Msk | I2C_CCR_FS | I2C_CCR_DUTY,
-               ccr_value << I2C_CCR_CCR_Pos | I2C_CCR_FS | 0); // Теперь у нас в CCR 35, в FS 1, в DUTY 0
+    I2C1->CCR = ccr_value;  // FS=0 (standard)
+    I2C1->TRISE = 42U + 1U; // стандартный режим
 
-    MODIFY_REG(I2C2->TRISE, I2C_TRISE_TRISE_Msk, ((i2c_freq / 1000000) + 1)); // Ограничивает максимальную длительность цикла ожидания. Короче чтобы I2C работал норм
-    SET_BIT(I2C2->CR1, I2C_CR1_PE_Msk);                                       // Включили шину I2C2 на частоте 42МГц
+    // Включаем ACK заранее
+    I2C1->CR1 |= I2C_CR1_ACK;
 
-    //
+    // И наконец включаем I2C
+    I2C1->CR1 |= I2C_CR1_PE;
+
+    // Для контроля выведем CR1/CR2
+    USART_Print("I2C1 CR1 = 0x");
+    USART_PrintHex(I2C1->CR1);
+    USART_Print(" CR2 = 0x");
+    USART_PrintlnHex(I2C1->CR2);
 }
-/*# КОД ПРОВЕРЕННЫЙ И ПОЛНОСТЬЮ РАБОЧИЙ. РУЧКАМИ НЕ ЛАПАТЬ #*/
