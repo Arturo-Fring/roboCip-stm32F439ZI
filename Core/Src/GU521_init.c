@@ -1,44 +1,67 @@
 #include "GU521_init.h"
 #include "usart.h"
 
-void Gyro_I2C2_Init_400kHz(void)
+void GY521_I2C1_Init(void)
 {
-    /* 1. Включение тактирования */
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOFEN | RCC_AHB1ENR_GPIOBEN;
-    RCC->APB1ENR |= RCC_APB1ENR_I2C2EN;
+    /* 1. Тактирование GPIOB и I2C1 */
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
+    RCC->APB1ENR |= RCC_APB1ENR_I2C1EN;
+    
+    /* 2. PB8 (SCL), PB9 (SDA) → AF4, open-drain, pull-up */
 
-    /* 2. PF0 = I2C2_SCL, PF1 = I2C2_SDA — Alternate Function 4 */
-    GPIOF->MODER   |=  (GPIO_MODER_MODE0_1 | GPIO_MODER_MODE1_1);        // Alternate function
-    GPIOF->OTYPER  |=  (GPIO_OTYPER_OT0   | GPIO_OTYPER_OT1);            // Open-drain (обязательно!)
-    GPIOF->OSPEEDR |=  (GPIO_OSPEEDR_OSPEED0 | GPIO_OSPEEDR_OSPEED1);    // Very High speed
-    GPIOF->PUPDR   &= ~(GPIO_PUPDR_PUPD0 | GPIO_PUPDR_PUPD1);           // сначала очистим
-    GPIOF->PUPDR   |=  (GPIO_PUPDR_PUPD0_0 | GPIO_PUPDR_PUPD1_0);       // Pull-up  (01)
+    // MODER: AF
+    GPIOB->MODER &= ~(GPIO_MODER_MODE8_Msk | GPIO_MODER_MODE9_Msk);
+    GPIOB->MODER |= (GPIO_MODER_MODE8_1 | GPIO_MODER_MODE9_1); // 10: AF
 
-    // Самое важное — AF4 для I2C2 на PF0/PF1 !!!
-    GPIOF->AFR[0] &= ~(0xFFUL);                                          // очистить биты 0-7
-    GPIOF->AFR[0] |=  (4UL << GPIO_AFRL_AFSEL0_Pos) |                    // AF4 для PF0
-                      (4UL << GPIO_AFRL_AFSEL1_Pos);                     // AF4 для PF1
+    // OTYPER: open-drain
+    GPIOB->OTYPER |= GPIO_OTYPER_OT8 | GPIO_OTYPER_OT9;
 
-    /* 3. PB5 — вход INT от гироскопа (если используете) */
-    GPIOB->MODER   &= ~GPIO_MODER_MODE5;      // Input
-    GPIOB->PUPDR   &= ~GPIO_PUPDR_PUPD5;      // No pull-up/pull-down (или можно pull-down)
+    // OSPEEDR: high
+    GPIOB->OSPEEDR |= GPIO_OSPEEDR_OSPEED8_Msk | GPIO_OSPEEDR_OSPEED9_Msk;
 
-    /* 4. Полный сброс I2C2 через RCC (самый надёжный способ) */
-    RCC->APB1RSTR |=  RCC_APB1RSTR_I2C2RST;
-    RCC->APB1RSTR &= ~RCC_APB1RSTR_I2C2RST;
+    // PUPDR: pull-up
+    GPIOB->PUPDR &= ~(GPIO_PUPDR_PUPD8_Msk | GPIO_PUPDR_PUPD9_Msk);
+    GPIOB->PUPDR |= (GPIO_PUPDR_PUPD8_0 | GPIO_PUPDR_PUPD9_0);
 
-    /* 5. Настройка частоты APB1 в регистре CR2 */
-    I2C2->CR2 = (I2C2->CR2 & ~I2C_CR2_FREQ_Msk) | 42U;   // 42 МГц (PCLK1)
+    // AF4
+    GPIOB->AFR[1] &= ~(GPIO_AFRH_AFSEL8_Msk | GPIO_AFRH_AFSEL9_Msk);
+    GPIOB->AFR[1] |= (4U << GPIO_AFRH_AFSEL8_Pos) |
+                     (4U << GPIO_AFRH_AFSEL9_Pos);
 
-    /* 6. Fast-mode Plus 400 кГц */
-    // Формула для Fm+ (FS=1, DUTY не важен):  CCR = PCLK1 / (2 × 400000)
-    // 42 000 000 / 800 000 = 52.5 → округляем вверх до 53
-    I2C2->CCR = I2C_CCR_FS | 53U;                // FS=1, CCR=53
+    /* 3. Полный сброс и конфиг I2C1 */
 
-    /* 7. TRISE для 400 кГц */
-    I2C2->TRISE = 43U;                           // 42 + 1 = 43
+    // Сначала полностью выключим
+    I2C1->CR1 = 0;
+    I2C1->CR2 = 0;
+    I2C1->OAR1 = 0;
+    I2C1->OAR2 = 0;
+    I2C1->CCR = 0;
+    I2C1->TRISE = 0;
 
-    /* 8. Включение I2C2 */
-    I2C2->CR1 |= I2C_CR1_PE;
+    // Частота APB1 = 42 МГц
+    I2C1->CR2 = 42U;
+
+    // Standard Mode 100 кГц
+    uint32_t i2c_freq = 42000000UL;
+    uint32_t i2c_speed = 100000UL;
+    uint32_t ccr_value = i2c_freq / (2U * i2c_speed);
+    if (ccr_value < 4U)
+        ccr_value = 4U;
+    if (ccr_value > 0xFFFU)
+        ccr_value = 0xFFFU;
+
+    I2C1->CCR = ccr_value;  // FS=0 (standard)
+    I2C1->TRISE = 42U + 1U; // стандартный режим
+
+    // Включаем ACK заранее
+    I2C1->CR1 |= I2C_CR1_ACK;
+
+    // И наконец включаем I2C
+    I2C1->CR1 |= I2C_CR1_PE;
+
+    // Для контроля выведем CR1/CR2
+    USART_Print("I2C1 CR1 = 0x");
+    USART_PrintHex(I2C1->CR1);
+    USART_Print(" CR2 = 0x");
+    USART_PrintlnHex(I2C1->CR2);
 }
-/*# КОД ПРОВЕРЕННЫЙ И ПОЛНОСТЬЮ РАБОЧИЙ. РУЧКАМИ НЕ ЛАПАТЬ #*/

@@ -1,127 +1,150 @@
-#include "GU521_init.h"
 #include "clock.h"
-#include <string.h>
-#include "motor.h"
-#include "usart.h"
 #include "init.h"
+#include "usart.h"
+#include "GU521_init.h"
 #include "MPU6050.h"
+#include "stm32f4xx.h"
+
+extern volatile uint32_t g_msTicks;
+
+static void Delay_ms(uint32_t ms)
+{
+    uint32_t start = g_msTicks;
+    while ((g_msTicks - start) < ms)
+    {
+    }
+}
 
 int main(void)
 {
-    /*  =============== ИНИЦИАЛИЗАЦИЯ =================== */
-    Clock_Init();               // твоя настройка тактирования (42/84/168 МГц и т.д.)
-    SysTick_Init_1ms();         // g_msTicks уже тикает
-    Gyro_init();                // I2C2 + пины PF0/PF1
-    Motor_Init();
+    /* 1. Тактирование ядра и шин */
+    Clock_Init();
+
+    /* 2. SysTick на 1 мс (g_msTicks) */
+    SysTick_Init_1ms();
+
+    /* 3. UART для отладочного вывода (USART3 на PD8/PD9) */
     USART3_Init(115200);
+    USART_Println("=== Simple MPU6050 test (I2C1 PB8/PB9) ===");
+    USART_Println("=== Robot gyro test (yaw) ===");
 
-    USART_Println("=== Robot debug UART ready ===");
-    MPU6050_Init();             // сброс + настройка диапазонов
+    /* 4. I2C1 на PB8/PB9 (GY-521) */
+    GY521_I2C1_Init();
+    USART_Println("I2C1 init done");
 
-    /* Ждём стабилизации гироскопа после включения */
-    for(uint8_t i = 0; i < 100000; i++);
+    /* Небольшая пауза, чтобы модуль проснулся */
+    Delay_ms(100);
 
-    /* Проверка WHO_AM_I */
-    uint8_t id = 0;
-    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_WHO_AM_I, 0x00); // dummy write
-    // простое чтение одного байта
-    while (I2C2->SR2 & I2C_SR2_BUSY);
-    SET_BIT(I2C2->CR1, I2C_CR1_START);
-    while (!READ_BIT(I2C2->SR1, I2C_SR1_SB));
-    I2C2->DR = (MPU6050_ADDR << 1) | 1;
-    while (!READ_BIT(I2C2->SR1, I2C_SR1_ADDR));
-    (void)I2C2->SR1; (void)I2C2->SR2;
-    CLEAR_BIT(I2C2->CR1, I2C_CR1_ACK);
-    SET_BIT(I2C2->CR1, I2C_CR1_STOP);
-    while (!READ_BIT(I2C2->SR1, I2C_SR1_RXNE));
-    id = I2C2->DR;
+    /* 5. Инициализация MPU6050 */
+    MPU6050_Init();
+    USART_Println("MPU6050 Init DONE");
 
-    USART_Print("MPU6050 WHO_AM_I = 0x");
+    /* 6. Проверка WHO_AM_I */
+    uint8_t id = MPU6050_ReadWhoAmI();
+    USART_Print("WHO_AM_I = 0x");
     USART_PrintlnHex(id);
-    if (id != 0x68) {
+
+    if (id != 0x68)
+    {
         USART_Println("ERROR: MPU6050 not responding!");
-        while(1);
+        while (1)
+        {
+            // висим, если датчик не отвечает
+        }
     }
     USART_Println("MPU6050 OK!");
 
-    /*  ===============  ПЕРЕМЕННЫЕ =================== */
-    int16_t accel[3] = {0};
-    int16_t gyro[3]  = {0};
+    // --- Калибровка гироскопа ---
+    USART_Println("Calibrating gyro, do NOT move the robot...");
+    float gyro_bias_x = 0.0f, gyro_bias_y = 0.0f, gyro_bias_z = 0.0f;
+    MPU6050_CalibrateGyro(&gyro_bias_x, &gyro_bias_y, &gyro_bias_z);
 
-    int32_t speedL = 0;
-    int32_t speedR = 0;
+    USART_Print("Gyro bias [dps]: ");
+    USART_PrintFloat(gyro_bias_x, 3);
+    USART_Print(" ");
+    USART_PrintFloat(gyro_bias_y, 3);
+    USART_Print(" ");
+    USART_PrintFloat(gyro_bias_z, 3);
+    USART_Println("");
 
-    float yaw = 0.0f;                   // текущий угол поворота (градусы)
-    float gyroZ_offset = 0.0f;          // смещение нуля (калибруется при старте)
+    USART_Println("Calibration done.");
 
-    uint32_t lastTime = g_msTicks;
-    uint32_t lastPrint = g_msTicks;
+    /* 7. Основной цикл: читаем аксель/гиро/температуру */
 
-    char counter = 0;
+    int16_t accel[3];
+    int16_t gyro[3];
+    int16_t temp_raw;
 
-    /* ========== Калибровка смещения гироскопа (10 секунд покоя) ========== */
-    USART_Println("Calibrating gyro... Keep robot STILL for 10 sec!");
-    int32_t sum_gyroZ = 0;
-    uint16_t samples = 0;
+    float yaw_deg = 0.0f;
+    uint32_t lastTicks = g_msTicks;
 
-    for (int i = 0; i < 10000; i++) // ~10 секунд при 1 кГц выборки
-    {
-        MPU6050_ReadData(accel, gyro);
-        sum_gyroZ += gyro[2];
-        samples++;
-        for(uint8_t i = 0; i < 1000; i++);
-    }
-
-    gyroZ_offset = (float)sum_gyroZ / samples / 131.0f;  // LSB/°/s при ±2000 dps
-    USART_Print("Gyro Z offset = ");
-    USART_PrintlnFloat(gyroZ_offset, 4);
-
-    USART_Println("Calibration done! Starting main loop...");
-
-    /* ====================== ОСНОВНОЙ ЦИКЛ ====================== */
     while (1)
     {
+
         uint32_t now = g_msTicks;
+        float dt = (now - lastTicks) / 1000.0f; // мс → сек
+        lastTicks = now;
 
-        /* Читаем данные с MPU6050 (как можно чаще) */
-        MPU6050_ReadData(accel, gyro);
+        MPU6050_ReadRaw(accel, gyro, &temp_raw);
 
-        /* Интеграция угла Yaw по оси Z */
-        uint32_t dt_ms = now - lastTime;
-        if (dt_ms > 0)
-        {
-            float dt_sec = dt_ms / 1000.0f;
-            float gyroZ_dps = (gyro[2] / 131.0f) - gyroZ_offset;  // ±2000 dps → 131 LSB/°/s
-            yaw += gyroZ_dps * dt_sec;
-            lastTime = now;
-        }
+        // переводим сырые значения в dps
+        float gx = MPU6050_GyroLSB_to_dps(gyro[0]) - gyro_bias_x;
+        float gy = MPU6050_GyroLSB_to_dps(gyro[1]) - gyro_bias_y;
+        float gz = MPU6050_GyroLSB_to_dps(gyro[2]) - gyro_bias_z;
 
-        /* Выводим данные раз в секунду (или чаще/реже — как хочешь) */
-        if ((now - lastPrint) >= 1000)  // каждую секунду
-        {
-            lastPrint = now;
+        // интеграция yaw по оси Z
+        yaw_deg += gz * dt; // gz в °/с, dt в сек → градусы
 
-            USART_Print("A: ");
-            USART_PrintInt(accel[0]); USART_Print(" ");
-            USART_PrintInt(accel[1]); USART_Print(" ");
-            USART_PrintlnInt(accel[2]);
+        // нормализация угла (чтобы не разрастался до бесконечности)
+        if (yaw_deg > 180.0f)
+            yaw_deg -= 360.0f;
+        if (yaw_deg < -180.0f)
+            yaw_deg += 360.0f;
 
-            USART_Print("G: ");
-            USART_PrintInt(gyro[0]); USART_Print(" ");
-            USART_PrintInt(gyro[1]); USART_Print(" ");
-            USART_PrintlnInt(gyro[2]);
+        // Можешь печатать вместе с A, G и T, но главное — yaw_deg:
+        USART_Print("Yaw[deg]: ");
+        USART_PrintFloat(yaw_deg, 2);
+        USART_Print("\r\n");
 
-            USART_Print("Yaw = ");
-            USART_PrintlnFloat(yaw, 2);
-            USART_Println("------------------------");
-        }
+        Delay_ms(20); // ~50 Гц
 
-        /* Здесь будет управление моторами по yaw, PID и т.д. */
-        // speedL = ...
-        // speedR = ...
+        // /* Читаем сырые данные */
+        // MPU6050_ReadRaw(accel, gyro, &temp_raw);
 
-        // Пока просто моргаем счётчиком
-        counter++;
-        if (counter > 50) counter = 0;
+        // /* Переводим в физические единицы */
+
+        // float ax_g = MPU6050_AccelLSB_to_g(accel[0]);
+        // float ay_g = MPU6050_AccelLSB_to_g(accel[1]);
+        // float az_g = MPU6050_AccelLSB_to_g(accel[2]);
+
+        // float gx_dps = MPU6050_GyroLSB_to_dps(gyro[0]);
+        // float gy_dps = MPU6050_GyroLSB_to_dps(gyro[1]);
+        // float gz_dps = MPU6050_GyroLSB_to_dps(gyro[2]);
+
+        // float temp_C = MPU6050_TempLSB_to_C(temp_raw);
+
+        // /* Выводим */
+
+        // USART_Print("A[g]: ");
+        // USART_PrintFloat(ax_g, 3);
+        // USART_Print(" ");
+        // USART_PrintFloat(ay_g, 3);
+        // USART_Print(" ");
+        // USART_PrintlnFloat(az_g, 3);
+
+        // USART_Print("G[dps]: ");
+        // USART_PrintFloat(gx_dps, 2);
+        // USART_Print(" ");
+        // USART_PrintFloat(gy_dps, 2);
+        // USART_Print(" ");
+        // USART_PrintlnFloat(gz_dps, 2);
+
+        // USART_Print("T[degC]: ");
+        // USART_PrintlnFloat(temp_C, 2);
+
+        // USART_Println("----------------");
+
+        // /* Частота обновления ~10 Гц */
+        // Delay_ms(100);
     }
 }
