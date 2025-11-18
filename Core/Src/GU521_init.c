@@ -12,14 +12,13 @@ void Gyro_init(void)
     SET_BIT(GPIOF->MODER, GPIO_MODER_MODE0_1 | GPIO_MODER_MODE1_1);               // Настроили пины PF0 (SDA) и PF1 (SCL) на альтернативный режим
     SET_BIT(GPIOF->OTYPER, GPIO_OTYPER_OT0 | GPIO_OTYPER_OT1);                    // Режим open-drain для PF0 и PF1
     SET_BIT(GPIOF->OSPEEDR, GPIO_OSPEEDR_OSPEED0_Msk | GPIO_OSPEEDR_OSPEED1_Msk); // Настроили работу выводов PF0 и PF1 на быстрый
-    CLEAR_REG(GPIOF->PUPDR);                                                      // Все без пулап или пулдаун
+    CLEAR_REG(GPIOF->PUPDR); // Все без пулап или пулдаун
+    SET_BIT(GPIOF->PUPDR, GPIO_PUPDR_PUPD0_0 | GPIO_PUPDR_PUPD1_0);
 
     CLEAR_BIT(GPIOB->MODER, GPIO_MODER_MODE5_Msk);       // Пин PB5 на вход. Отвечает в гироскопе за INT
     CLEAR_BIT(GPIOB->PUPDR, GPIO_PUPDR_PUPD5_Msk);       // Пин PB5 без пулап и пулдаун
     CLEAR_BIT(GPIOB->OSPEEDR, GPIO_OSPEEDR_OSPEED5_Msk); // Входу не нужна высокая скорость
     CLEAR_BIT(GPIOB->OTYPER, GPIO_OTYPER_OT5_Msk);       // Пуш-пул
-    //
-    // ... настройка GPIOF, GPIOB, I2C2 ...
 
     // дальше — работа с I2C и конфигурация гироскопа
     // Настройка I2C2
@@ -32,13 +31,14 @@ void Gyro_init(void)
 
     uint32_t i2c_freq = 42000000UL;
     uint32_t i2c_speed = 400000UL;
-    uint32_t ccr_value = (i2c_freq / (3 * i2c_speed));
+    uint32_t ccr_value = (i2c_freq / (3 * i2c_speed)); // 35 
 
-    MODIFY_REG(I2C2->CCR, I2C_CCR_CCR_Msk | I2C_CCR_DUTY | I2C_CCR_FS,
-               ccr_value << I2C_CCR_CCR_Pos | I2C_CCR_FS | I2C_CCR_DUTY);
+    MODIFY_REG(I2C2->CCR, I2C_CCR_CCR_Msk | I2C_CCR_FS | I2C_CCR_DUTY,
+               ccr_value << I2C_CCR_CCR_Pos | I2C_CCR_FS | 0); // Теперь у нас в CCR 35, в FS 1, в DUTY 0
 
     MODIFY_REG(I2C2->TRISE, I2C_TRISE_TRISE_Msk, ((i2c_freq / 1000000) + 1)); // Ограничивает максимальную длительность цикла ожидания. Короче чтобы I2C работал норм
     SET_BIT(I2C2->CR1, I2C_CR1_PE_Msk);                                       // Включили шину I2C2 на частоте 42МГц
 
     //
 }
+/*# КОД ПРОВЕРЕННЫЙ И ПОЛНОСТЬЮ РАБОЧИЙ. РУЧКАМИ НЕ ЛАПАТЬ #*/
