@@ -1,49 +1,48 @@
 #include "MPU6050.h"   
 
-void I2C_WriteReg(uint8_t addr, uint8_t reg, uint8_t data)
+void I2C_WriteReg(uint8_t dev_addr, uint8_t reg, uint8_t data)
 {
-    while(I2C2->SR2 & I2C_SR2_BUSY) __NOP();// Ждем освобождения шины (после предыдущей передачи или чужого мастера)
+    // Ждём свободную шину
+    while (I2C2->SR2 & I2C_SR2_BUSY) __NOP();
 
-    SET_BIT(I2C2->CR1, I2C_CR1_START); // Включили передачу данных по шине I2C (Генерируем Старт)
-    while(!READ_BIT(I2C2->SR1, I2C_SR1_SB)) __NOP();// Пока SB не равен 1 ждем правильного старта I2C. То есть ждем аппаратно формирования условия Старт на линии SB
+    // START
+    I2C2->CR1 |= I2C_CR1_START;
+    while (!(I2C2->SR1 & I2C_SR1_SB)) __NOP();
 
-    I2C2->DR = addr; // Вписали какой-то адрес (устройства, например) -> Передали бит записи
+    // Адрес + запись
+    I2C2->DR = (dev_addr << 1) & 0xFE;          // обязательно чётный!
+    while (!(I2C2->SR1 & I2C_SR1_ADDR)) __NOP();
+    (void)I2C2->SR1; (void)I2C2->SR2;           // сброс ADDR
 
-    while(!READ_BIT(I2C2->SR1, I2C_SR1_ADDR)) __NOP(); // Короче говоря, мы вписали на предыдущем шаге адрес устройства. I2C самовольно выставляет на шину 7битный адрес и бит R/W. Ждет 9 такт (так называемый ACK).
-    // Дальше есть два варианта ответ ACK - я тут, готов слушать. NACK - никого нет, я занят.
-    // ADDR = 1 значит, что STM32 отправил адрес на шину и ведомое устройство ответило и подтвердило свое существование и готовность к обмену данными
-    // ждем подтверждения успешной отправки адреса
+    // Регистр
+    while (!(I2C2->SR1 & I2C_SR1_TXE)) __NOP();
+    I2C2->DR = reg;
 
-    (void)I2C2->SR1;
-    (void)I2C2->SR2; // Сбросили флаг ADDR. Операция выглядит странно, однако, это единственный верный метод сброса флага ADDR. Если не сбросить, то передачи будут вечно блокироваться.
+    // Данные
+    while (!(I2C2->SR1 & I2C_SR1_TXE)) __NOP();
+    I2C2->DR = data;
 
-    while(!READ_BIT(I2C2->SR1, I2C_SR1_TXE)) __NOP(); // Ждем пока передатчик не отчистится
-    I2C2->DR = reg; // Отправляем адрес регистра
+    // Ждём, пока оба байта реально уйдут (BTF=1)
+    while (!(I2C2->SR1 & I2C_SR1_BTF)) __NOP();
 
-    while(!READ_BIT(I2C2->SR1, I2C_SR1_TXE)) __NOP(); // Ждем пока передатчик не отчистится
-    I2C2->DR = data; // Отправляем данные
-
-    while(!READ_BIT(I2C2->SR1, I2C_SR1_BTF)) __NOP(); // Ждем успешной передачи данных
-    // BTF = 1 значит, что DR у нас пуст, сдвиговый регистр пуст -> Последний байт ливнул
-
-    SET_BIT(I2C2->CR1, I2C_CR1_STOP); // Выключили передачу
+    // Только теперь STOP
+    I2C2->CR1 |= I2C_CR1_STOP;
 }
-
 
 void MPU6050_Init(void)
 {
     // Так как существует вероятность сохранения старых настроек, очистим. Также пробудим гироскоп
     I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_PWR_MGMT_1, MPU6050_DEVICE_RESET);
-    for(uint32_t i = 0; i < 100000; i++); // Небольшая задержечка
-    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_PWR_MGMT_1, MPU6050_CLOCK_SOURSE_PLL_Xref); // PLL с Ox (вроде как точнее)
+    for(uint32_t i = 0; i < 10000000; i++) __NOP(); // Небольшая задержечка
+    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_PWR_MGMT_1, MPU6050_CLOCK_PLL_XGYRO); // PLL с Ox (вроде как точнее)
 
-    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_SMPLRT_DIV, MPU6050_SMPLRT_7DIV); // Предделитель 7 - частота выборки 1 кГц
+    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_SMPLRT_DIV, MPU6050_SMPLRT_DIV_1KHZ); // Предделитель 7 - частота выборки 1 кГц
 
-    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_GYRO_CONFIG, MPU6050_GYRO_CONFIG_2000); // Диапазон гироскопа +- 2000 градусов
+    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_GYRO_CONFIG, MPU6050_GYRO_FS_2000); // Диапазон гироскопа +- 2000 градусов
 
-    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_ACCEL_CONFIG, MPU6050_ACCEL_CONFIG_8g); // Диапазон акселерометра +- 8g
+    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_ACCEL_CONFIG, MPU6050_ACCEL_FS_8G); // Диапазон акселерометра +- 8g
 
-    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_INT_ENABLE, MPU6050_FSYNC_INT_EN); // Включили прерывания по INT
+    I2C_WriteReg(MPU6050_ADDR, MPU6050_REG_INT_ENABLE, MPU6050_DATA_READY_INT); // Включили прерывания по INT
 }
 
 void MPU6050_ReadData(int16_t* accel, int16_t* gyro)

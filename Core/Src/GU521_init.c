@@ -1,44 +1,44 @@
 #include "GU521_init.h"
 #include "usart.h"
 
-void Gyro_init(void)
+void Gyro_I2C2_Init_400kHz(void)
 {
-    SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOFEN_Msk | RCC_AHB1ENR_GPIOBEN_Msk); // Включили тактирования порта F, шины APB1 для I2C2, и порта B
-    SET_BIT(RCC->APB1ENR, RCC_APB1ENR_I2C2EN_Msk);
+    /* 1. Включение тактирования */
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOFEN | RCC_AHB1ENR_GPIOBEN;
+    RCC->APB1ENR |= RCC_APB1ENR_I2C2EN;
 
-    CLEAR_REG(GPIOF->AFR[0]);
-    SET_BIT(GPIOF->AFR[0], GPIO_AFRL_AFRL0_2 | GPIO_AFRL_AFRL1_2); //
+    /* 2. PF0 = I2C2_SCL, PF1 = I2C2_SDA — Alternate Function 4 */
+    GPIOF->MODER   |=  (GPIO_MODER_MODE0_1 | GPIO_MODER_MODE1_1);        // Alternate function
+    GPIOF->OTYPER  |=  (GPIO_OTYPER_OT0   | GPIO_OTYPER_OT1);            // Open-drain (обязательно!)
+    GPIOF->OSPEEDR |=  (GPIO_OSPEEDR_OSPEED0 | GPIO_OSPEEDR_OSPEED1);    // Very High speed
+    GPIOF->PUPDR   &= ~(GPIO_PUPDR_PUPD0 | GPIO_PUPDR_PUPD1);           // сначала очистим
+    GPIOF->PUPDR   |=  (GPIO_PUPDR_PUPD0_0 | GPIO_PUPDR_PUPD1_0);       // Pull-up  (01)
 
-    SET_BIT(GPIOF->MODER, GPIO_MODER_MODE0_1 | GPIO_MODER_MODE1_1);               // Настроили пины PF0 (SDA) и PF1 (SCL) на альтернативный режим
-    SET_BIT(GPIOF->OTYPER, GPIO_OTYPER_OT0 | GPIO_OTYPER_OT1);                    // Режим open-drain для PF0 и PF1
-    SET_BIT(GPIOF->OSPEEDR, GPIO_OSPEEDR_OSPEED0_Msk | GPIO_OSPEEDR_OSPEED1_Msk); // Настроили работу выводов PF0 и PF1 на быстрый
-    CLEAR_REG(GPIOF->PUPDR); // Все без пулап или пулдаун
-    SET_BIT(GPIOF->PUPDR, GPIO_PUPDR_PUPD0_0 | GPIO_PUPDR_PUPD1_0);
+    // Самое важное — AF4 для I2C2 на PF0/PF1 !!!
+    GPIOF->AFR[0] &= ~(0xFFUL);                                          // очистить биты 0-7
+    GPIOF->AFR[0] |=  (4UL << GPIO_AFRL_AFSEL0_Pos) |                    // AF4 для PF0
+                      (4UL << GPIO_AFRL_AFSEL1_Pos);                     // AF4 для PF1
 
-    CLEAR_BIT(GPIOB->MODER, GPIO_MODER_MODE5_Msk);       // Пин PB5 на вход. Отвечает в гироскопе за INT
-    CLEAR_BIT(GPIOB->PUPDR, GPIO_PUPDR_PUPD5_Msk);       // Пин PB5 без пулап и пулдаун
-    CLEAR_BIT(GPIOB->OSPEEDR, GPIO_OSPEEDR_OSPEED5_Msk); // Входу не нужна высокая скорость
-    CLEAR_BIT(GPIOB->OTYPER, GPIO_OTYPER_OT5_Msk);       // Пуш-пул
+    /* 3. PB5 — вход INT от гироскопа (если используете) */
+    GPIOB->MODER   &= ~GPIO_MODER_MODE5;      // Input
+    GPIOB->PUPDR   &= ~GPIO_PUPDR_PUPD5;      // No pull-up/pull-down (или можно pull-down)
 
-    // дальше — работа с I2C и конфигурация гироскопа
-    // Настройка I2C2
+    /* 4. Полный сброс I2C2 через RCC (самый надёжный способ) */
+    RCC->APB1RSTR |=  RCC_APB1RSTR_I2C2RST;
+    RCC->APB1RSTR &= ~RCC_APB1RSTR_I2C2RST;
 
-    SET_BIT(I2C2->CR1, I2C_CR1_SWRST); // SWRST = 1
+    /* 5. Настройка частоты APB1 в регистре CR2 */
+    I2C2->CR2 = (I2C2->CR2 & ~I2C_CR2_FREQ_Msk) | 42U;   // 42 МГц (PCLK1)
 
-    CLEAR_BIT(I2C2->CR1, I2C_CR1_SWRST); // SWRST = 0
+    /* 6. Fast-mode Plus 400 кГц */
+    // Формула для Fm+ (FS=1, DUTY не важен):  CCR = PCLK1 / (2 × 400000)
+    // 42 000 000 / 800 000 = 52.5 → округляем вверх до 53
+    I2C2->CCR = I2C_CCR_FS | 53U;                // FS=1, CCR=53
 
-    MODIFY_REG(I2C2->CR2, I2C_CR2_FREQ_Msk, 42 << I2C_CR2_FREQ_Pos); // Настроили частоту на 42 МГц
+    /* 7. TRISE для 400 кГц */
+    I2C2->TRISE = 43U;                           // 42 + 1 = 43
 
-    uint32_t i2c_freq = 42000000UL;
-    uint32_t i2c_speed = 400000UL;
-    uint32_t ccr_value = (i2c_freq / (3 * i2c_speed)); // 35 
-
-    MODIFY_REG(I2C2->CCR, I2C_CCR_CCR_Msk | I2C_CCR_FS | I2C_CCR_DUTY,
-               ccr_value << I2C_CCR_CCR_Pos | I2C_CCR_FS | 0); // Теперь у нас в CCR 35, в FS 1, в DUTY 0
-
-    MODIFY_REG(I2C2->TRISE, I2C_TRISE_TRISE_Msk, ((i2c_freq / 1000000) + 1)); // Ограничивает максимальную длительность цикла ожидания. Короче чтобы I2C работал норм
-    SET_BIT(I2C2->CR1, I2C_CR1_PE_Msk);                                       // Включили шину I2C2 на частоте 42МГц
-
-    //
+    /* 8. Включение I2C2 */
+    I2C2->CR1 |= I2C_CR1_PE;
 }
 /*# КОД ПРОВЕРЕННЫЙ И ПОЛНОСТЬЮ РАБОЧИЙ. РУЧКАМИ НЕ ЛАПАТЬ #*/
