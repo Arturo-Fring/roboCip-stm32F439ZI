@@ -42,7 +42,6 @@ void Motor_Init(void);
  *  - |speed| в пределах 0..MOTOR_PWM_MAX
  */
 
-
 void Motor_SetSpeed(MotorId id, int16_t speed);
 
 /* Явная остановка (эквивалент Motor_SetSpeed(id, 0)) */
