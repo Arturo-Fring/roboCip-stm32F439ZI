@@ -30,11 +30,11 @@ int main(void)
     USART_Println("Init OK");
     Delay_ms(1000);
 
-    // ПРОБА 1: Вперёд 20 см, PWM 50
+    // ПРОБА 1: Вперёд 30 см, PWM 50
     MoveForwardMM(300.0f, 65);
     Delay_ms(1000);
 
-    // ПРОБА 2: Назад 20 см, PWM 50
+    // ПРОБА 2: Назад 30 см, PWM 50
     MoveBackwardMM(300.0f, 65);
 
     USART_Println("=== SCRIPT DONE ===");

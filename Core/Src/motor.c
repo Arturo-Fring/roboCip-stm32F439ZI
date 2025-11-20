@@ -1,8 +1,36 @@
 #include "motor.h"
-// motor.c
+
+/******************************************************************************
+ *                           MOTOR DRIVER — motor.c
+ *
+ * Управляет двумя моторами постоянного тока через драйвер H-моста.
+ *
+ * Каждый мотор имеет:
+ *   - ДВЕ линии направления (INx)
+ *   - Один PWM-сигнал от TIM1 (канал 1 или 2)
+ *
+ * Конструкция подключения (важно для понимания):
+ *
+ *   MOTOR_A (левый):
+ *      IN1 = PE2
+ *      IN2 = PD11
+ *      PWM = TIM1_CH1 (PE9)
+ *
+ *   MOTOR_B (правый):
+ *      IN3 = PD12
+ *      IN4 = PD13
+ *      PWM = TIM1_CH2 (PE11)
+ *
+ * PWM генерируется таймером TIM1 (частота 20 кГц).
+ * Направление задаётся комбинациями INx:
+ *
+ *      Вперёд:   IN1=0, IN2=1
+ *      Назад:    IN1=1, IN2=0
+ *      Стоп:     IN1=0, IN2=0   (электротормоз)
+ *
+ *****************************************************************************/
 
 /* --- ЛОКАЛЬНЫЕ ПРОТОТИПЫ --- */
-
 static void Motor_ClockInit(void);
 static void Motor_GPIO_DirPins_Init(void);
 static void Motor_GPIO_PwmPins_Init(void);
@@ -11,52 +39,62 @@ static void Motor_TIM1_Init(void);
 static void Motor_SetDir(MotorId id, int8_t dir);
 static void Motor_SetPwm(MotorId id, uint16_t value);
 
-// Включение тактирования для портов мотора и таймеров
+/******************************************************************************
+ *                           Motor_ClockInit()
+ *
+ * Включает тактирование:
+ *   - GPIO портов: D и E
+ *   - таймера TIM1 (через APB2)
+ *
+ * Без включения тактирования любые попытки записи в регистры GPIO/TIM1
+ * будут либо проигнорированы, либо вызовут ошибку.
+ *****************************************************************************/
 static void Motor_ClockInit(void)
 {
     SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIODEN);
     SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOEEN);
 
-    // Включаем тактирование TIM1 (шина APB2)
     SET_BIT(RCC->APB2ENR, RCC_APB2ENR_TIM1EN);
 }
 
-// IN1..IN4: PD11–PD14 как обычные выходы
+/******************************************************************************
+ *                  Motor_GPIO_DirPins_Init()
+ *
+ * Настраивает линии направления IN1–IN4 как цифровые выходы.
+ *
+ * Пины:
+ *     IN1 = PE2
+ *     IN2 = PD11
+ *     IN3 = PD12
+ *     IN4 = PD13
+ *
+ * Все пины настраиваются как:
+ *      MODE  = output (01)
+ *      OTYPER = push-pull
+ *      OSPEED = high speed (для лучшего отклика)
+ *      PUPDR = no pull
+ *
+ * Затем выставляется начальное состояние всех INx = 0 (тормоз).
+ *****************************************************************************/
 static void Motor_GPIO_DirPins_Init(void)
 {
-    /* --- Включаем тактирование портов D и E --- */
+    /* Тактирование портов */
     SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIODEN);
     SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOEEN);
 
-    /* ======================================================
-       IN1  = PE2
-       IN2  = PD11
-       IN3  = PD12
-       IN4  = PD13
-       ====================================================== */
+    /************** IN1 = PE2 **************/
+    MODIFY_REG(GPIOE->MODER, GPIO_MODER_MODER2_Msk,
+               (0x1UL << GPIO_MODER_MODER2_Pos)); // output mode
 
-    /* ----------- PE2 (IN1) ---------- */
-    // MODER: PE2 = output (01)
-    MODIFY_REG(GPIOE->MODER,
-               GPIO_MODER_MODER2_Msk,
-               (0x1UL << GPIO_MODER_MODER2_Pos));
+    CLEAR_BIT(GPIOE->OTYPER, GPIO_OTYPER_OT_2); // push-pull
 
-    // OTYPER: push-pull
-    CLEAR_BIT(GPIOE->OTYPER, GPIO_OTYPER_OT_2);
+    MODIFY_REG(GPIOE->OSPEEDR, GPIO_OSPEEDR_OSPEED2_Msk,
+               (0x3UL << GPIO_OSPEEDR_OSPEED2_Pos)); // high speed
 
-    // OSPEEDR: high speed (11)
-    MODIFY_REG(GPIOE->OSPEEDR,
-               GPIO_OSPEEDR_OSPEED2_Msk,
-               (0x3UL << GPIO_OSPEEDR_OSPEED2_Pos));
+    MODIFY_REG(GPIOE->PUPDR, GPIO_PUPDR_PUPD2_Msk, 0U);
 
-    // PUPDR: no pull (00)
-    MODIFY_REG(GPIOE->PUPDR,
-               GPIO_PUPDR_PUPD2_Msk,
-               0U);
+    /************** IN2=PD11, IN3=PD12, IN4=PD13 **************/
 
-    /* ----------- PD11, PD12, PD13 (IN2, IN3, IN4) ---------- */
-
-    // MODER
     MODIFY_REG(GPIOD->MODER,
                GPIO_MODER_MODER11_Msk |
                    GPIO_MODER_MODER12_Msk |
@@ -65,13 +103,11 @@ static void Motor_GPIO_DirPins_Init(void)
                    (0x1UL << GPIO_MODER_MODER12_Pos) |
                    (0x1UL << GPIO_MODER_MODER13_Pos));
 
-    // OTYPER
     CLEAR_BIT(GPIOD->OTYPER,
               GPIO_OTYPER_OT_11 |
                   GPIO_OTYPER_OT_12 |
                   GPIO_OTYPER_OT_13);
 
-    // OSPEEDR
     MODIFY_REG(GPIOD->OSPEEDR,
                GPIO_OSPEEDR_OSPEED11_Msk |
                    GPIO_OSPEEDR_OSPEED12_Msk |
@@ -80,248 +116,200 @@ static void Motor_GPIO_DirPins_Init(void)
                    (0x3UL << GPIO_OSPEEDR_OSPEED12_Pos) |
                    (0x3UL << GPIO_OSPEEDR_OSPEED13_Pos));
 
-    // PUPDR
     MODIFY_REG(GPIOD->PUPDR,
                GPIO_PUPDR_PUPD11_Msk |
                    GPIO_PUPDR_PUPD12_Msk |
                    GPIO_PUPDR_PUPD13_Msk,
                0U);
 
-    /* На старте → все INx = 0 (тормоз) */
-
-    // PE2 = 0
+    /* Начальное состояние — стоп (все INx = 0) */
     SET_BIT(GPIOE->BSRR, GPIO_BSRR_BR_2);
-
-    // PD11,12,13 = 0
     SET_BIT(GPIOD->BSRR,
             GPIO_BSRR_BR_11 |
                 GPIO_BSRR_BR_12 |
                 GPIO_BSRR_BR_13);
 }
 
-// Настройка PE9, PE11 на TIM1_CH1, TIM1_CH2 (режим MODER как 10, alt.func.)
+/******************************************************************************
+ *                    Motor_GPIO_PwmPins_Init()
+ *
+ * Настройка PE9 (CH1) и PE11 (CH2) в режим PWM:
+ *    - MODER = Alternate function (10b)
+ *    - AF = AF1  (TIM1)
+ *    - High speed
+ *
+ * TIM1 управляет этими двумя пинами в режиме PWM.
+ *****************************************************************************/
 static void Motor_GPIO_PwmPins_Init(void)
 {
-    /* --- 0. Включаем тактирование порта E --- */
     SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOEEN);
 
-    /* --- 1. MODER: Alternate function (10b) --- */
     MODIFY_REG(GPIOE->MODER,
-               GPIO_MODER_MODER9_Msk | GPIO_MODER_MODER11_Msk,
+               GPIO_MODER_MODER9_Msk |
+                   GPIO_MODER_MODER11_Msk,
                (0x2UL << GPIO_MODER_MODER9_Pos) |
-                   (0x2UL << GPIO_MODER_MODER11_Pos));
+                   (0x2UL << GPIO_MODER_MODER11_Pos)); // AF
 
-    /* --- 2. OTYPER: Push-pull (0) --- */
     CLEAR_BIT(GPIOE->OTYPER, GPIO_OTYPER_OT_9 | GPIO_OTYPER_OT_11);
 
-    /* --- 3. OSPEEDR: High speed (11b) --- */
     MODIFY_REG(GPIOE->OSPEEDR,
-               GPIO_OSPEEDR_OSPEED9_Msk | GPIO_OSPEEDR_OSPEED11_Msk,
+               GPIO_OSPEEDR_OSPEED9_Msk |
+                   GPIO_OSPEEDR_OSPEED11_Msk,
                (0x3UL << GPIO_OSPEEDR_OSPEED9_Pos) |
-                   (0x3UL << GPIO_OSPEEDR_OSPEED11_Pos));
+                   (0x3UL << GPIO_OSPEEDR_OSPEED11_Pos)); // high
 
-    /* --- 4. PUPDR: No pull-up / pull-down (00b) --- */
     MODIFY_REG(GPIOE->PUPDR,
                GPIO_PUPDR_PUPD9_Msk | GPIO_PUPDR_PUPD11_Msk,
                0U);
 
-    /* --- 5. AFR[1]: Alternate function AF1 (TIM1) --- */
     MODIFY_REG(GPIOE->AFR[1],
-               GPIO_AFRH_AFSEL9_Msk | GPIO_AFRH_AFSEL11_Msk,
+               GPIO_AFRH_AFSEL9_Msk |
+                   GPIO_AFRH_AFSEL11_Msk,
                (0x1UL << GPIO_AFRH_AFSEL9_Pos) |
-                   (0x1UL << GPIO_AFRH_AFSEL11_Pos));
+                   (0x1UL << GPIO_AFRH_AFSEL11_Pos)); // AF1=TIM1
 }
 
-/*
- * ПАРАМЕТРЫ ШИМ:
+/******************************************************************************
+ *                           Motor_TIM1_Init()
  *
- * f_TIM1  — частота тактирования таймера TIM1 (после APB2 и умножителя).
- * В учебном примере предположим:
- *     f_TIM1 = 168 МГц  (это зависит от настройки RCC! см. SystemClock)
+ * Полная настройка TIM1 на генерацию PWM 20 кГц на CH1 и CH2.
  *
- * Хотим получить частоту PWM:
- *     f_PWM = 20 кГц
+ * Параметры PWM:
+ *     PSC = 83   (делит 168 МГц → 2 МГц)
+ *     ARR = 99   (2 МГц / 100 → 20 кГц)
  *
- * Формула:
- *   f_PWM = f_TIM1 / ((PSC + 1) * (ARR + 1))
- *
- * Отсюда:
- *   (PSC + 1) * (ARR + 1) = f_TIM1 / f_PWM
- *   (PSC + 1) * (ARR + 1) = 168 000 000 / 20 000 = 8400
- *
- * Выбираем удобную пару:
- *   PSC + 1 = 42  => PSC = 83
- *   ARR + 1 = 100 => ARR = 99
- *
- * Тогда:
- *   f_PWM = 168 000 000 / (84 * 100) = 20 000 Гц (20 кГц)
- */
-
-/*
- * Настройка TIM1 в режим PWM:
- *
- * 1) Останавливаем таймер (CR1.CEN = 0).
- * 2) Задаём PSC и ARR под нужную частоту (20 кГц).
- * 3) Настраиваем канал 1 и 2:
- *      - CCxS = 00 (канал как выход)
- *      - OCxM = 110 (PWM mode 1)
- *      - OCxPE = 1 (предзагрузка CCRx включена)
- * 4) Разрешаем выходы каналов в CCER (CC1E, CC2E).
- * 5) Устанавливаем начальную скважность (CCR1/CCR2 = 0).
- * 6) Включаем ARPE (CR1.ARPE = 1), чтобы ARR тоже был буферизирован.
- * 7) Включаем BDTR.MOE — главный выход (обязательно для TIM1).
- * 8) Делаем EGR.UG, чтобы применить настройки.
- * 9) Включаем таймер (CR1.CEN = 1).
- */
+ * Каналы настроены:
+ *     - PWM mode 1 (OCxM = 110)
+ *     - Preload CCR включён (OCxPE = 1)
+ *     - Выходы CH1/CH2 разрешены в CCER
+ *     - MOE = 1 (обязательно для TIM1)
+ *****************************************************************************/
 static void Motor_TIM1_Init(void)
 {
-    /* --- 1. Остановить таймер перед настройкой --- */
-    CLEAR_BIT(TIM1->CR1, TIM_CR1_CEN);
+    CLEAR_BIT(TIM1->CR1, TIM_CR1_CEN); // стоп
 
-    /* --- 2. Задать делитель (PSC) и период (ARR) --- */
-    WRITE_REG(TIM1->PSC, MOTOR_TIM1_PSC); /* делитель: f_cnt = f_tim / (PSC+1) */
-    WRITE_REG(TIM1->ARR, MOTOR_TIM1_ARR); /* период: CNT считает от 0 до ARR */
+    WRITE_REG(TIM1->PSC, MOTOR_TIM1_PSC);
+    WRITE_REG(TIM1->ARR, MOTOR_TIM1_ARR);
 
-    /* --- 3. Канал 1: PWM mode 1, preload ---
-     *
-     * CCMR1, поле для CH1:
-     *   CC1S[1:0] = 00 -> канал работает как выход
-     *   OC1M[2:0] = 110 -> PWM mode 1
-     *   OC1PE = 1      -> предзагрузка CCR1 (CCR1 в "теневом" регистре)
-     */
+    /*** Канал 1 (Motor A) ***/
     MODIFY_REG(TIM1->CCMR1,
                TIM_CCMR1_CC1S_Msk |
                    TIM_CCMR1_OC1M_Msk |
                    TIM_CCMR1_OC1PE_Msk,
-               (0x0UL << TIM_CCMR1_CC1S_Pos) |     /* CC1S = 00: output */
-                   (0x6UL << TIM_CCMR1_OC1M_Pos) | /* OC1M = 110: PWM mode 1 */
-                   TIM_CCMR1_OC1PE);               /* включаем preload CCR1 */
+               (0x0 << TIM_CCMR1_CC1S_Pos) |
+                   (0x6 << TIM_CCMR1_OC1M_Pos) |
+                   TIM_CCMR1_OC1PE);
 
-    /* --- 4. Канал 2: PWM mode 1, preload ---
-     *
-     * Для CH2 те же поля, но CC2S, OC2M, OC2PE.
-     */
+    /*** Канал 2 (Motor B) ***/
     MODIFY_REG(TIM1->CCMR1,
                TIM_CCMR1_CC2S_Msk |
                    TIM_CCMR1_OC2M_Msk |
                    TIM_CCMR1_OC2PE_Msk,
-               (0x0UL << TIM_CCMR1_CC2S_Pos) |     /* CC2S = 00: output */
-                   (0x6UL << TIM_CCMR1_OC2M_Pos) | /* OC2M = 110: PWM mode 1 */
-                   TIM_CCMR1_OC2PE);               /* preload CCR2 */
+               (0x0 << TIM_CCMR1_CC2S_Pos) |
+                   (0x6 << TIM_CCMR1_OC2M_Pos) |
+                   TIM_CCMR1_OC2PE);
 
-    /* --- 5. CCER: включаем выходы CH1 и CH2, полярность "активный высокий" ---
-     *
-     * CC1E = 1 -> канал 1 включён, сигнал идёт на пин PE9.
-     * CC1P = 0 -> активный высокий (логическая "1" = высокий уровень).
-     * Аналогично CC2E/CC2P для канала 2 (PE11).
-     */
     MODIFY_REG(TIM1->CCER,
-               TIM_CCER_CC1E_Msk | TIM_CCER_CC1P_Msk |
-                   TIM_CCER_CC2E_Msk | TIM_CCER_CC2P_Msk,
-               TIM_CCER_CC1E |     /* CH1 enable, polarity high */
-                   TIM_CCER_CC2E); /* CH2 enable, polarity high */
+               TIM_CCER_CC1E_Msk |
+                   TIM_CCER_CC2E_Msk,
+               TIM_CCER_CC1E | TIM_CCER_CC2E);
 
-    /* --- 6. Начальная скважность: 0% ---
-     * CNT в начале периода всегда < CCRx? Нет, мы просто делаем CCRx=0,
-     * значит "высокий" участок будет нулевой длины -> моторы стоят.
-     */
-    WRITE_REG(TIM1->CCR1, 0U); /* PWM = 0% для мотора A */
-    WRITE_REG(TIM1->CCR2, 0U); /* PWM = 0% для мотора B */
+    WRITE_REG(TIM1->CCR1, 0);
+    WRITE_REG(TIM1->CCR2, 0);
 
-    /* --- 7. Разрешаем буферизацию ARR (ARPE) ---
-     * Теперь ARR тоже буферизуется, и его изменение не рвёт период.
-     */
     SET_BIT(TIM1->CR1, TIM_CR1_ARPE);
-
-    /* --- 8. BDTR: включаем главный выход (MOE) ---
-     *
-     * Для advanced-timer (TIM1/TIM8) ВСЕ PWM-выходы физически блокируются,
-     * пока не установлен бит MOE (Main Output Enable).
-     * Поэтому без этого шага CH1/CH2 на ногах не появятся.
-     */
     SET_BIT(TIM1->BDTR, TIM_BDTR_MOE);
-
-    /* --- 9. Генерируем событие обновления (EGR.UG) ---
-     *
-     * Это "подхватывает" значения PSC, ARR, CCRx из теневых регистров.
-     * После этого таймер готов к работе с обновлёнными параметрами.
-     */
     SET_BIT(TIM1->EGR, TIM_EGR_UG);
-
-    /* --- 10. Запускаем таймер (CR1.CEN = 1) --- */
     SET_BIT(TIM1->CR1, TIM_CR1_CEN);
 }
 
-/* --- 5. Внутренняя функция: направление мотора --- */
-/* dir > 0: вперёд, dir < 0: назад, dir = 0: оба INx = 0 (тормоз) */
+/******************************************************************************
+ *                      Motor_SetDir() — направление
+ *
+ * Устанавливает логические уровни на INx в зависимости от dir:
+ *
+ *      dir > 0 → вперёд
+ *      dir < 0 → назад
+ *      dir = 0 → стоп (IN1=0, IN2=0)
+ *
+ * Реализация через GPIOx->BSRR:
+ *   - BS_  → установить 1
+ *   - BR_  → установить 0
+ *
+ *****************************************************************************/
 static void Motor_SetDir(MotorId id, int8_t dir)
 {
     switch (id)
     {
-    case MOTOR_A: // A = IN1/IN2
-        if (dir > 0)
+    case MOTOR_A:
+        if (dir > 0) // вперёд
         {
-            // IN1=0 (PE2=0), IN2=1 (PD11=1)
-            GPIOE->BSRR = GPIO_BSRR_BR_2;
-            GPIOD->BSRR = GPIO_BSRR_BS_11;
+            GPIOE->BSRR = GPIO_BSRR_BR_2;  // IN1 = 0
+            GPIOD->BSRR = GPIO_BSRR_BS_11; // IN2 = 1
         }
-        else if (dir < 0)
+        else if (dir < 0) // назад
         {
-            // IN1=1, IN2=0
-            GPIOE->BSRR = GPIO_BSRR_BS_2;
-            GPIOD->BSRR = GPIO_BSRR_BR_11;
+            GPIOE->BSRR = GPIO_BSRR_BS_2;  // IN1 = 1
+            GPIOD->BSRR = GPIO_BSRR_BR_11; // IN2 = 0
         }
-        else
+        else // стоп
         {
-            // стоп: IN1=0, IN2=0
             GPIOE->BSRR = GPIO_BSRR_BR_2;
             GPIOD->BSRR = GPIO_BSRR_BR_11;
         }
         break;
 
-    case MOTOR_B: // B = IN3/IN4
+    case MOTOR_B:
         if (dir > 0)
         {
-            // IN3=0 (PD12=0), IN4=1 (PD13=1)
             GPIOD->BSRR = GPIO_BSRR_BR_12;
             GPIOD->BSRR = GPIO_BSRR_BS_13;
         }
         else if (dir < 0)
         {
-            // IN3=1, IN4=0
             GPIOD->BSRR = GPIO_BSRR_BS_12;
             GPIOD->BSRR = GPIO_BSRR_BR_13;
         }
         else
         {
-            // стоп
-            GPIOD->BSRR = GPIO_BSRR_BR_12 | GPIO_BSRR_BR_13;
+            GPIOD->BSRR = GPIO_BSRR_BR_12 |
+                          GPIO_BSRR_BR_13;
         }
         break;
     }
 }
 
-/* --- 6. Внутренняя функция: установка скважности (CCR) --- */
-/* value: 0..MOTOR_PWM_MAX */
+/******************************************************************************
+ *                       Motor_SetPwm() — скважность PWM
+ *
+ * Записывает значение value в соответствующий регистр CCR:
+ *
+ *      MOTOR_A → CCR1
+ *      MOTOR_B → CCR2
+ *
+ * value обязан быть в пределах 0..MOTOR_PWM_MAX.
+ *****************************************************************************/
 static void Motor_SetPwm(MotorId id, uint16_t value)
 {
     if (value > MOTOR_PWM_MAX)
-    {
         value = MOTOR_PWM_MAX;
-    }
 
     if (id == MOTOR_A)
-    {
         WRITE_REG(TIM1->CCR1, value);
-    }
-    else if (id == MOTOR_B)
-    {
+    else
         WRITE_REG(TIM1->CCR2, value);
-    }
 }
 
-/* --- 7. Публичные функции --- */
-
+/******************************************************************************
+ *                                 Motor_Init()
+ *
+ * Полная инициализация драйвера:
+ *   1. Включить тактирование TIM1, GPIO
+ *   2. Настроить IN1-In4 как выходы
+ *   3. Настроить PWM-пины (PE9/PE11) под TIM1 AF1
+ *   4. Настроить TIM1 под PWM 20 кГц
+ *   5. Остановить оба мотора
+ *****************************************************************************/
 void Motor_Init(void)
 {
     Motor_ClockInit();
@@ -329,49 +317,49 @@ void Motor_Init(void)
     Motor_GPIO_PwmPins_Init();
     Motor_TIM1_Init();
 
-    /* На всякий случай ещё раз убедимся, что моторы стоят */
     Motor_SetSpeed(MOTOR_A, 0);
     Motor_SetSpeed(MOTOR_B, 0);
 }
 
+/******************************************************************************
+ *                        Motor_SetSpeed(id, speed)
+ *
+ * Универсальное управление мотором:
+ *
+ *      speed > 0 → вперёд
+ *      speed < 0 → назад
+ *      speed = 0 → стоп
+ *
+ * По модулю |speed| берётся PWM-скважность.
+ * НАПРАВЛЕНИЕ задаётся INx.
+ *****************************************************************************/
 void Motor_SetSpeed(MotorId id, int16_t speed)
 {
     if (id != MOTOR_A && id != MOTOR_B)
-    {
         return;
-    }
 
     if (speed == 0)
     {
-        /* Полный стоп: PWM=0 и "тормоз" по INx */
         Motor_SetPwm(id, 0);
         Motor_SetDir(id, 0);
         return;
     }
 
-    int8_t dir;
-    uint16_t mag;
-
-    if (speed > 0)
-    {
-        dir = +1;
-        mag = (uint16_t)speed;
-    }
-    else
-    {
-        dir = -1;
-        mag = (uint16_t)(-speed);
-    }
+    int8_t dir = (speed > 0) ? +1 : -1;
+    uint16_t mag = (speed > 0) ? speed : -speed;
 
     if (mag > MOTOR_PWM_MAX)
-    {
         mag = MOTOR_PWM_MAX;
-    }
 
     Motor_SetDir(id, dir);
     Motor_SetPwm(id, mag);
 }
 
+/******************************************************************************
+ *                             Motor_Stop()
+ *
+ * Полный стоп → PWM=0 + INx=0 + электротормоз.
+ *****************************************************************************/
 void Motor_Stop(MotorId id)
 {
     Motor_SetSpeed(id, 0);
