@@ -31,11 +31,11 @@ int main(void)
     Delay_ms(1000);
 
     // ПРОБА 1: Вперёд 30 см, PWM 50
-    MoveForwardMM(300.0f, 65);
+    MoveForwardMM(300.0f, 70);
     Delay_ms(1000);
 
     // ПРОБА 2: Назад 30 см, PWM 50
-    MoveBackwardMM(300.0f, 65);
+    MoveBackwardMM(300.0f, 70);
 
     USART_Println("=== SCRIPT DONE ===");
 

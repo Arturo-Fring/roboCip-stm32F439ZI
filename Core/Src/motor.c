@@ -78,56 +78,49 @@ static void Motor_ClockInit(void)
  *****************************************************************************/
 static void Motor_GPIO_DirPins_Init(void)
 {
-    /* Тактирование портов */
+    /* Тактирование порта D */
     SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIODEN);
-    SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOEEN);
 
-    /************** IN1 = PE2 **************/
-    MODIFY_REG(GPIOE->MODER, GPIO_MODER_MODER2_Msk,
-               (0x1UL << GPIO_MODER_MODER2_Pos)); // output mode
-
-    CLEAR_BIT(GPIOE->OTYPER, GPIO_OTYPER_OT_2); // push-pull
-
-    MODIFY_REG(GPIOE->OSPEEDR, GPIO_OSPEEDR_OSPEED2_Msk,
-               (0x3UL << GPIO_OSPEEDR_OSPEED2_Pos)); // high speed
-
-    MODIFY_REG(GPIOE->PUPDR, GPIO_PUPDR_PUPD2_Msk, 0U);
-
-    /************** IN2=PD11, IN3=PD12, IN4=PD13 **************/
+    /************** IN1 = PD4, IN2 = PD5, IN3 = PD6, IN4 = PD7 **************/
 
     MODIFY_REG(GPIOD->MODER,
-               GPIO_MODER_MODER11_Msk |
-                   GPIO_MODER_MODER12_Msk |
-                   GPIO_MODER_MODER13_Msk,
-               (0x1UL << GPIO_MODER_MODER11_Pos) |
-                   (0x1UL << GPIO_MODER_MODER12_Pos) |
-                   (0x1UL << GPIO_MODER_MODER13_Pos));
+               GPIO_MODER_MODER4_Msk |
+                   GPIO_MODER_MODER5_Msk |
+                   GPIO_MODER_MODER6_Msk |
+                   GPIO_MODER_MODER7_Msk,
+               (0x1UL << GPIO_MODER_MODER4_Pos) |
+                   (0x1UL << GPIO_MODER_MODER5_Pos) |
+                   (0x1UL << GPIO_MODER_MODER6_Pos) |
+                   (0x1UL << GPIO_MODER_MODER7_Pos));
 
     CLEAR_BIT(GPIOD->OTYPER,
-              GPIO_OTYPER_OT_11 |
-                  GPIO_OTYPER_OT_12 |
-                  GPIO_OTYPER_OT_13);
+              GPIO_OTYPER_OT_4 |
+                  GPIO_OTYPER_OT_5 |
+                  GPIO_OTYPER_OT_6 |
+                  GPIO_OTYPER_OT_7);
 
     MODIFY_REG(GPIOD->OSPEEDR,
-               GPIO_OSPEEDR_OSPEED11_Msk |
-                   GPIO_OSPEEDR_OSPEED12_Msk |
-                   GPIO_OSPEEDR_OSPEED13_Msk,
-               (0x3UL << GPIO_OSPEEDR_OSPEED11_Pos) |
-                   (0x3UL << GPIO_OSPEEDR_OSPEED12_Pos) |
-                   (0x3UL << GPIO_OSPEEDR_OSPEED13_Pos));
+               GPIO_OSPEEDR_OSPEED4_Msk |
+                   GPIO_OSPEEDR_OSPEED5_Msk |
+                   GPIO_OSPEEDR_OSPEED6_Msk |
+                   GPIO_OSPEEDR_OSPEED7_Msk,
+               (0x3UL << GPIO_OSPEEDR_OSPEED4_Pos) |
+                   (0x3UL << GPIO_OSPEEDR_OSPEED5_Pos) |
+                   (0x3UL << GPIO_OSPEEDR_OSPEED6_Pos) |
+                   (0x3UL << GPIO_OSPEEDR_OSPEED7_Pos));
 
     MODIFY_REG(GPIOD->PUPDR,
-               GPIO_PUPDR_PUPD11_Msk |
-                   GPIO_PUPDR_PUPD12_Msk |
-                   GPIO_PUPDR_PUPD13_Msk,
+               GPIO_PUPDR_PUPD4_Msk |
+                   GPIO_PUPDR_PUPD5_Msk |
+                   GPIO_PUPDR_PUPD6_Msk |
+                   GPIO_PUPDR_PUPD7_Msk,
                0U);
 
-    /* Начальное состояние — стоп (все INx = 0) */
-    SET_BIT(GPIOE->BSRR, GPIO_BSRR_BR_2);
-    SET_BIT(GPIOD->BSRR,
-            GPIO_BSRR_BR_11 |
-                GPIO_BSRR_BR_12 |
-                GPIO_BSRR_BR_13);
+    /* Стоп — вниз все линии */
+    GPIOD->BSRR = GPIO_BSRR_BR_4 |
+                  GPIO_BSRR_BR_5 |
+                  GPIO_BSRR_BR_6 |
+                  GPIO_BSRR_BR_7;
 }
 
 /******************************************************************************
@@ -244,36 +237,36 @@ static void Motor_SetDir(MotorId id, int8_t dir)
     case MOTOR_A:
         if (dir > 0) // вперёд
         {
-            GPIOE->BSRR = GPIO_BSRR_BR_2;  // IN1 = 0
-            GPIOD->BSRR = GPIO_BSRR_BS_11; // IN2 = 1
+            GPIOD->BSRR = GPIO_BSRR_BR_4; // IN1 = 0
+            GPIOD->BSRR = GPIO_BSRR_BS_5; // IN2 = 1
         }
         else if (dir < 0) // назад
         {
-            GPIOE->BSRR = GPIO_BSRR_BS_2;  // IN1 = 1
-            GPIOD->BSRR = GPIO_BSRR_BR_11; // IN2 = 0
+            GPIOD->BSRR = GPIO_BSRR_BS_4; // IN1 = 1
+            GPIOD->BSRR = GPIO_BSRR_BR_5; // IN2 = 0
         }
         else // стоп
         {
-            GPIOE->BSRR = GPIO_BSRR_BR_2;
-            GPIOD->BSRR = GPIO_BSRR_BR_11;
+            GPIOD->BSRR = GPIO_BSRR_BR_4 |
+                          GPIO_BSRR_BR_5;
         }
         break;
 
     case MOTOR_B:
         if (dir > 0)
         {
-            GPIOD->BSRR = GPIO_BSRR_BR_12;
-            GPIOD->BSRR = GPIO_BSRR_BS_13;
+            GPIOD->BSRR = GPIO_BSRR_BR_6;
+            GPIOD->BSRR = GPIO_BSRR_BS_7;
         }
         else if (dir < 0)
         {
-            GPIOD->BSRR = GPIO_BSRR_BS_12;
-            GPIOD->BSRR = GPIO_BSRR_BR_13;
+            GPIOD->BSRR = GPIO_BSRR_BS_6;
+            GPIOD->BSRR = GPIO_BSRR_BR_7;
         }
         else
         {
-            GPIOD->BSRR = GPIO_BSRR_BR_12 |
-                          GPIO_BSRR_BR_13;
+            GPIOD->BSRR = GPIO_BSRR_BR_6 |
+                          GPIO_BSRR_BR_7;
         }
         break;
     }

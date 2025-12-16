@@ -15,7 +15,7 @@ static void Delay_ms(uint32_t ms)
     }
 }
 
-int maing(void)
+int maink(void)
 {
     /* 1. Тактирование ядра и шин */
     Clock_Init();
@@ -107,44 +107,45 @@ int maing(void)
         USART_Print("\r\n");
 
         Delay_ms(20); // ~50 Гц
-
-        // /* Читаем сырые данные */
-        // MPU6050_ReadRaw(accel, gyro, &temp_raw);
-
-        // /* Переводим в физические единицы */
-
-        // float ax_g = MPU6050_AccelLSB_to_g(accel[0]);
-        // float ay_g = MPU6050_AccelLSB_to_g(accel[1]);
-        // float az_g = MPU6050_AccelLSB_to_g(accel[2]);
-
-        // float gx_dps = MPU6050_GyroLSB_to_dps(gyro[0]);
-        // float gy_dps = MPU6050_GyroLSB_to_dps(gyro[1]);
-        // float gz_dps = MPU6050_GyroLSB_to_dps(gyro[2]);
-
-        // float temp_C = MPU6050_TempLSB_to_C(temp_raw);
-
-        // /* Выводим */
-
-        // USART_Print("A[g]: ");
-        // USART_PrintFloat(ax_g, 3);
-        // USART_Print(" ");
-        // USART_PrintFloat(ay_g, 3);
-        // USART_Print(" ");
-        // USART_PrintlnFloat(az_g, 3);
-
-        // USART_Print("G[dps]: ");
-        // USART_PrintFloat(gx_dps, 2);
-        // USART_Print(" ");
-        // USART_PrintFloat(gy_dps, 2);
-        // USART_Print(" ");
-        // USART_PrintlnFloat(gz_dps, 2);
-
-        // USART_Print("T[degC]: ");
-        // USART_PrintlnFloat(temp_C, 2);
-
-        // USART_Println("----------------");
-
-        // /* Частота обновления ~10 Гц */
-        // Delay_ms(100);
     }
 }
+
+/*
+// /* Читаем сырые данные */
+// MPU6050_ReadRaw(accel, gyro, &temp_raw);
+
+// /* Переводим в физические единицы */
+
+// float ax_g = MPU6050_AccelLSB_to_g(accel[0]);
+// float ay_g = MPU6050_AccelLSB_to_g(accel[1]);
+// float az_g = MPU6050_AccelLSB_to_g(accel[2]);
+
+// float gx_dps = MPU6050_GyroLSB_to_dps(gyro[0]);
+// float gy_dps = MPU6050_GyroLSB_to_dps(gyro[1]);
+// float gz_dps = MPU6050_GyroLSB_to_dps(gyro[2]);
+
+// float temp_C = MPU6050_TempLSB_to_C(temp_raw);
+
+// /* Выводим */
+
+// USART_Print("A[g]: ");
+// USART_PrintFloat(ax_g, 3);
+// USART_Print(" ");
+// USART_PrintFloat(ay_g, 3);
+// USART_Print(" ");
+// USART_PrintlnFloat(az_g, 3);
+
+// USART_Print("G[dps]: ");
+// USART_PrintFloat(gx_dps, 2);
+// USART_Print(" ");
+// USART_PrintFloat(gy_dps, 2);
+// USART_Print(" ");
+// USART_PrintlnFloat(gz_dps, 2);
+
+// USART_Print("T[degC]: ");
+// USART_PrintlnFloat(temp_C, 2);
+
+// USART_Println("----------------");
+
+// /* Частота обновления ~10 Гц */
+// Delay_ms(100);
