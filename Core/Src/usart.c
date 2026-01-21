@@ -128,16 +128,16 @@ void USART_PrintlnFloat(float value, uint8_t digits)
 
 uint8_t USART_IsDataReceived(void)
 {
-    return (USART2->SR & USART_SR_RXNE) ? 1U : 0U;
+    return (USART3->SR & USART_SR_RXNE) ? 1U : 0U;
 }
 
 char USART_ReadChar(void)
 
 {
-    while ((USART2->SR & USART_SR_RXNE) == 0)
+    while ((USART3->SR & USART_SR_RXNE) == 0)
     {
     }
-    return (char)(USART2->DR & 0xFFU);
+    return (char)(USART3->DR & 0xFFU);
 }
 
 ///////  ДЛЯ FLOAT ЧИСЕЛ
@@ -171,4 +171,37 @@ void USART_PrintFloatSimple(float value, uint8_t digits)
         USART_WriteChar('0' + digit);
         frac -= (float)digit;
     }
+}
+
+void USART_PrintFixed1(float x) // 1 знак после запятой
+{
+    if (x != x)
+    {
+        USART_Print("NaN");
+        return;
+    } // NaN check
+    if (x > 1e9f)
+    {
+        USART_Print("+INF");
+        return;
+    }
+    if (x < -1e9f)
+    {
+        USART_Print("-INF");
+        return;
+    }
+
+    int32_t v = (int32_t)(x * 10.0f);
+    if (v < 0)
+    {
+        USART_WriteChar('-');
+        v = -v;
+    }
+
+    int32_t ip = v / 10;
+    int32_t fp = v % 10;
+
+    USART_PrintInt(ip);
+    USART_WriteChar('.');
+    USART_WriteChar('0' + (char)fp);
 }

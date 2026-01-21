@@ -152,6 +152,11 @@
 // Прерывание: Data Ready
 #define MPU6050_INT_DATA_RDY 0x01
 
+#define MPU6050_REG_GYRO_ZOUT_H 0x47
+#define MPU6050_REG_GYRO_ZOUT_L 0x48
+
+uint8_t MPU6050_ReadGyroZRaw(int16_t *gz_raw);
+
 /******************************************************************************
  *                           ПРОТОТИПЫ ФУНКЦИЙ
  ******************************************************************************/
@@ -190,6 +195,11 @@ float MPU6050_TempLSB_to_C(int16_t raw);
 /**
  * @brief Калибровка гироскопа по N сэмплам (усреднение дрейфа)
  */
-void MPU6050_CalibrateGyro(float *bias_x, float *bias_y, float *bias_z);
+void MPU6050_CalibrateGyro(float *bias_x, float *bias_y, float *bias_z, uint16_t samples);
+
+extern volatile float g_yaw_deg;
+
+void Gyro_Init(void);
+void Gyro_Update(void);
 
 #endif

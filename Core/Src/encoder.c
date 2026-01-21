@@ -1,43 +1,24 @@
 // encoder.c
 //
-// Модуль подсчёта тиков энкодеров через EXTI прерывания.
-//
-// Реализует:
-//  - Инициализацию GPIO (PA5, PA6) как входов с pull-up
-//  - Настройку EXTI5 и EXTI6 на оба фронта
-//  - Защиту от дребезга по времени
-//  - Подсчёт:
-//        * тиков за интервал (GetAndResetTicks)
-//        * суммарных тиков с момента старта
-//
-// Логика детекции:
-//   - EXTI вызывает IRQ на любом фронте.
-//   - В обработчике читаем реальное состояние пина.
-//   - Если обнаружен переход HIGH -> LOW, считаем как "тик".
-//   - Интервал между тиками фильтруем по ENC_MIN_TICK_INTERVAL_MS.
-//
+// Энкодеры через EXTI прерывания (ТОЛЬКО по FALLING edge).
+// Идея: один спад (falling) = один тик.
+// Это уменьшает шум/дребезг и убирает двойные срабатывания от "оба фронта".
 
 #include "encoder.h"
 
-extern volatile uint32_t g_msTicks; // Глобальная миллисекундная метка SysTick
+extern volatile uint32_t g_msTicks; // SysTick ms
 
 /* --------------------------------------------------------------------------
- * Переменные модуля (статические)
+ * Переменные модуля
  * -------------------------------------------------------------------------- */
 
-// Счётчики тиков за последний "интервал" (между вызовами GetAndResetTicks)
 static volatile uint32_t s_leftTicks = 0;
 static volatile uint32_t s_rightTicks = 0;
 
-// Общие суммарные тики с момента запуска системы
 static volatile uint32_t s_leftTotal = 0;
 static volatile uint32_t s_rightTotal = 0;
 
-// Последнее состояние пинов (1/0) — используется для детекции перехода HIGH→LOW
-static volatile uint8_t s_leftLastState = 1;
-static volatile uint8_t s_rightLastState = 1;
-
-// Метка времени последнего принятого тика — антидребезг
+/* Антидребезг по времени (минимальный интервал между тиками) */
 static volatile uint32_t s_leftLastMs = 0;
 static volatile uint32_t s_rightLastMs = 0;
 
@@ -45,19 +26,40 @@ static volatile uint32_t s_rightLastMs = 0;
 static void Encoder_GPIO_Init(void);
 static void Encoder_EXTI_Init(void);
 
+static inline void Encoder_CountLeftTick(void)
+{
+    uint32_t now = g_msTicks;
+
+    // Антидребезг по времени (если ENC_MIN_TICK_INTERVAL_MS = 0 -> отключён)
+    if (ENC_MIN_TICK_INTERVAL_MS == 0U || (now - s_leftLastMs) >= ENC_MIN_TICK_INTERVAL_MS)
+    {
+        s_leftTicks++;
+        s_leftTotal++;
+        s_leftLastMs = now;
+    }
+}
+
+static inline void Encoder_CountRightTick(void)
+{
+    uint32_t now = g_msTicks;
+
+    if (ENC_MIN_TICK_INTERVAL_MS == 0U || (now - s_rightLastMs) >= ENC_MIN_TICK_INTERVAL_MS)
+    {
+        s_rightTicks++;
+        s_rightTotal++;
+        s_rightLastMs = now;
+    }
+}
+
 /* --------------------------------------------------------------------------
- * Инициализация энкодеров
+ * Инициализация
  * -------------------------------------------------------------------------- */
 void Encoder_Init(void)
 {
     Encoder_GPIO_Init();
     Encoder_EXTI_Init();
 
-    // Считываем реальные текущие уровни пинов
-    s_leftLastState = (ENC_L_GPIO->IDR & (1U << ENC_L_PIN)) ? 1U : 0U;
-    s_rightLastState = (ENC_R_GPIO->IDR & (1U << ENC_R_PIN)) ? 1U : 0U;
-
-    // Начальные метки времени (для антидребезга)
+    // Стартовые метки времени
     s_leftLastMs = g_msTicks;
     s_rightLastMs = g_msTicks;
 
@@ -67,19 +69,19 @@ void Encoder_Init(void)
 }
 
 /* --------------------------------------------------------------------------
- * Настройка GPIO: PA5 и PA6 как входы с pull-up
+ * GPIO: PA5/PA6 input + pull-up (как у тебя было)
  * -------------------------------------------------------------------------- */
 static void Encoder_GPIO_Init(void)
 {
-    // Включаем тактирование GPIOA
+    // Тактирование GPIOA
     SET_BIT(RCC->AHB1ENR, ENC_L_GPIO_CLK);
 
-    // PA5 и PA6 → режим входа (MODER = 00)
+    // PA5, PA6 -> input (00)
     MODIFY_REG(ENC_L_GPIO->MODER,
                GPIO_MODER_MODER5_Msk | GPIO_MODER_MODER6_Msk,
                0U);
 
-    // Устанавливаем подтяжку "pull-up" (PUPDR = 01)
+    // pull-up (01)
     MODIFY_REG(ENC_L_GPIO->PUPDR,
                GPIO_PUPDR_PUPD5_Msk | GPIO_PUPDR_PUPD6_Msk,
                (0x1UL << GPIO_PUPDR_PUPD5_Pos) |
@@ -87,100 +89,59 @@ static void Encoder_GPIO_Init(void)
 }
 
 /* --------------------------------------------------------------------------
- * Настройка EXTI для линий 5 и 6
+ * EXTI: ТОЛЬКО FALLING edge на линиях 5 и 6
  * -------------------------------------------------------------------------- */
 static void Encoder_EXTI_Init(void)
 {
-    // Включаем модуль SYSCFG — нужен для привязки EXTI к GPIO
+    // SYSCFG clock
     SET_BIT(RCC->APB2ENR, RCC_APB2ENR_SYSCFGEN);
 
-    // Привязываем EXTI линий 5 и 6 к PA5 и PA6
+    // EXTI5/6 -> Port A (0 = PA)
     MODIFY_REG(SYSCFG->EXTICR[1],
                SYSCFG_EXTICR2_EXTI5_Msk | SYSCFG_EXTICR2_EXTI6_Msk,
-               0U); // 0 = порт A
+               0U);
 
-    // Разрешаем прерывания по линиям 5 и 6
-    SET_BIT(EXTI->IMR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE));
+    // На всякий случай: отключить обе линии, почистить триггеры, сбросить pending
+    CLEAR_BIT(EXTI->IMR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE));
+    CLEAR_BIT(EXTI->RTSR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE));
+    CLEAR_BIT(EXTI->FTSR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE));
+    SET_BIT(EXTI->PR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE)); // clear pending
 
-    // Включаем реакцию на оба фронта (Rising и Falling)
-    SET_BIT(EXTI->RTSR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE));
+    // Включаем ТОЛЬКО FALLING
     SET_BIT(EXTI->FTSR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE));
 
-    // Разрешаем IRQ группы EXTI5–9
+    // Разрешаем линии
+    SET_BIT(EXTI->IMR, (1U << ENC_L_EXTI_LINE) | (1U << ENC_R_EXTI_LINE));
+
+    // NVIC EXTI5..9
     NVIC_SetPriority(ENC_IRQN, 5);
     NVIC_EnableIRQ(ENC_IRQN);
 }
 
 /* --------------------------------------------------------------------------
- * Обработка фронта левого энкодера
- * -------------------------------------------------------------------------- */
-static inline void Encoder_HandleEdge_Left(void)
-{
-    // Текущее логическое состояние входа
-    uint8_t state = (ENC_L_GPIO->IDR & (1U << ENC_L_PIN)) ? 1U : 0U;
-    uint32_t now = g_msTicks;
-
-    // Детектор "тик" = переход HIGH → LOW
-    if (s_leftLastState == 1U && state == 0U)
-    {
-        // Антидребезг по времени
-        if ((now - s_leftLastMs) > ENC_MIN_TICK_INTERVAL_MS)
-        {
-            s_leftTicks++; // tики за интервал
-            s_leftTotal++; // суммарные тики
-            s_leftLastMs = now;
-        }
-    }
-
-    s_leftLastState = state;
-}
-
-/* --------------------------------------------------------------------------
- * Обработка фронта правого энкодера
- * -------------------------------------------------------------------------- */
-static inline void Encoder_HandleEdge_Right(void)
-{
-    uint8_t state = (ENC_R_GPIO->IDR & (1U << ENC_R_PIN)) ? 1U : 0U;
-    uint32_t now = g_msTicks;
-
-    if (s_rightLastState == 1U && state == 0U)
-    {
-        if ((now - s_rightLastMs) > ENC_MIN_TICK_INTERVAL_MS)
-        {
-            s_rightTicks++;
-            s_rightTotal++;
-            s_rightLastMs = now;
-        }
-    }
-
-    s_rightLastState = state;
-}
-
-/* --------------------------------------------------------------------------
- * Основной обработчик EXTI5..9
+ * IRQ EXTI5..9
  * -------------------------------------------------------------------------- */
 void EXTI9_5_IRQHandler(void)
 {
-    // Проверяем: пришло ли прерывание с линии 5?
+    // Линия 5 (левый)
     if (READ_BIT(EXTI->PR, (1U << ENC_L_EXTI_LINE)))
     {
-        SET_BIT(EXTI->PR, (1U << ENC_L_EXTI_LINE)); // сброс флага
-        Encoder_HandleEdge_Left();
+        SET_BIT(EXTI->PR, (1U << ENC_L_EXTI_LINE)); // clear pending
+        Encoder_CountLeftTick();
     }
 
-    // Линия 6
+    // Линия 6 (правый)
     if (READ_BIT(EXTI->PR, (1U << ENC_R_EXTI_LINE)))
     {
         SET_BIT(EXTI->PR, (1U << ENC_R_EXTI_LINE));
-        Encoder_HandleEdge_Right();
+        Encoder_CountRightTick();
     }
 }
 
 /* --------------------------------------------------------------------------
- * Публичные функции
+ * Публичные функции (как было)
  * -------------------------------------------------------------------------- */
 
-/* Возвращает тики за интервал dt и обнуляет счётчики */
 void Encoder_GetAndResetTicks(uint32_t *leftTicks, uint32_t *rightTicks)
 {
     uint32_t l, r;
@@ -198,7 +159,6 @@ void Encoder_GetAndResetTicks(uint32_t *leftTicks, uint32_t *rightTicks)
         *rightTicks = r;
 }
 
-/* Возвращает суммарные тики левого колеса */
 uint32_t Encoder_GetTotalLeft(void)
 {
     uint32_t v;
@@ -208,7 +168,6 @@ uint32_t Encoder_GetTotalLeft(void)
     return v;
 }
 
-/* Возвращает суммарные тики правого колеса */
 uint32_t Encoder_GetTotalRight(void)
 {
     uint32_t v;
@@ -218,13 +177,11 @@ uint32_t Encoder_GetTotalRight(void)
     return v;
 }
 
-/* Перевод тиков в миллиметры */
 float Encoder_TicksToMM(uint32_t ticks)
 {
     return ticks * ENC_MM_PER_TICK;
 }
 
-/* Перевод тиков в метры */
 float Encoder_TicksToMeters(uint32_t ticks)
 {
     return ticks * ENC_M_PER_TICK;

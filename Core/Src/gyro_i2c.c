@@ -16,7 +16,7 @@
 // Стандартный режим I2C: 100 кГц
 // Частота шины APB1 = 42 МГц (в STM32F429ZI)
 
-#include "GU521_init.h"
+#include "gyro_i2c.h"
 #include "usart.h"
 
 void GY521_I2C1_Init(void)

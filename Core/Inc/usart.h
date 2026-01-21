@@ -13,7 +13,6 @@
 
 void USART3_Init(uint32_t baudrate);
 
-
 /* Базовые функции */
 void USART_WriteChar(char c);
 void USART_WriteString(const char *s);
@@ -35,5 +34,5 @@ void USART_PrintlnFloat(float value, uint8_t digits);
 /* Если захочешь читать из порта */
 uint8_t USART_IsDataReceived(void);
 char USART_ReadChar(void);
-
+void USART_PrintFixed1(float x);
 #endif // USART_H

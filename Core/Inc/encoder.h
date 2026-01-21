@@ -53,7 +53,7 @@
 #define ENC_M_PER_TICK (ENC_MM_PER_TICK / 1000.0f)
 
 // Минимальный интервал между тиками (мс) — защита от дребезга
-#define ENC_MIN_TICK_INTERVAL_MS 2U
+#define ENC_MIN_TICK_INTERVAL_MS 10U
 
 #ifdef __cplusplus
 extern "C"
@@ -78,7 +78,8 @@ extern "C"
 }
 #endif
 
-#endif /* ENCODER_H */
+#endif
+/* ENCODER_H */
 
 /******************************************************************************
  *                        КАК РАБОТАЮТ ЭНКОДЕРЫ И СЧЁТЧИКИ
